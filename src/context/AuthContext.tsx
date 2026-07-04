@@ -29,13 +29,41 @@ const AuthContext = createContext<AuthContextType>({
   signOut: async () => {},
 });
 
+// 🛡️ CHECKPOINT PROTECTION (SINGLE FLIGHT MODULE GUARD):
+// Memori di luar siklus React agar kebal terhadap remount dari React 18 Strict Mode
+let activeFetchPromise: Promise<any> | null = null;
+let cachedUserId: string | null = null;
+let cachedProfileData: Profile | null = null;
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchProfile = async (userId: string) => {
-    try {
+    // 1. Jika data KTP untuk ID ini sudah ada di cache modul, langsung pakai tanpa fetch ke Supabase!
+    if (cachedUserId === userId && cachedProfileData) {
+      setProfile(cachedProfileData);
+      setLoading(false);
+      return;
+    }
+
+    // 2. Jika sedang ada proses fetch yang berjalan di background untuk ID ini, tunggu hasilnya (kunci benturan simultan!)
+    if (activeFetchPromise && cachedUserId === userId) {
+      try {
+        const data = await activeFetchPromise;
+        if (data) setProfile(data);
+      } catch (err) {
+        console.error("[Satelit PENA]: Gagal menumpang fetch:", err);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // 3. Mulai proses fetch baru & catat sebagai activeFetchPromise
+    cachedUserId = userId;
+    activeFetchPromise = (async () => {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -43,19 +71,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .maybeSingle();
 
       if (error) throw error;
-      
+      return data;
+    })();
+
+    try {
+      const data = await activeFetchPromise;
       if (!data) {
         console.warn("[Satelit PENA]: Akun valid, tapi belum punya KTP di tabel profiles!");
         setProfile(null);
-        return;
+        cachedProfileData = null;
+      } else {
+        console.log("[Satelit PENA]: KTP Terverifikasi ->", data);
+        setProfile(data);
+        cachedProfileData = data; // Simpan ke cache modul
       }
-
-      console.log("[Satelit PENA]: KTP Terverifikasi ->", data);
-      setProfile(data);
     } catch (error: any) {
       console.error("[Satelit PENA Error]: Gagal menarik KTP:", error.message || error);
       setProfile(null);
+      cachedUserId = null;
+      cachedProfileData = null;
     } finally {
+      activeFetchPromise = null; // Bersihkan status proses berjalan
       setLoading(false);
     }
   };
@@ -81,13 +117,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (event, session) => {
+        if (!isMounted) return;
+
+        // Abaikan event perpanjangan token atau inisialisasi awal yang tumpang tindih
+        if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') return;
+
         if (session?.user) {
           setUser(session.user);
           await fetchProfile(session.user.id);
         } else {
           setUser(null);
           setProfile(null);
+          cachedUserId = null;
+          cachedProfileData = null;
+          activeFetchPromise = null;
           setLoading(false);
         }
       }
@@ -101,6 +145,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     setLoading(true);
+    cachedUserId = null;
+    cachedProfileData = null;
+    activeFetchPromise = null;
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
