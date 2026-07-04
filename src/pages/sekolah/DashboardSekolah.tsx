@@ -4,12 +4,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
-
-// IMPORT GAMBAR BANNER BARU
-// @ts-ignore
-import dashboardPena from '../../assets/dashboard_pena.png'; 
-// @ts-ignore
-import bannerPena from '../../assets/banner_pena.png'; 
+import { useLocation } from 'react-router-dom';
 
 // IMPORT KOMPONEN ANAK
 import ModalDetailPrestasi from './components/ModalDetailPrestasi';
@@ -50,6 +45,8 @@ const panenKepalaSekolah = (targetNpsn: string, targetId: string, targetNama: st
 
 export default function DashboardSekolah() {
   const { profile } = useAuth();
+  const location = useLocation(); 
+  
   const [liveProfile, setLiveProfile] = useState(profile);
   const [dataSekolah, setDataSekolah] = useState<SekolahPelengkap | null>(null);
   const [papanPrestasi, setPapanPrestasi] = useState<KlasemenKlub[]>([]);
@@ -57,10 +54,7 @@ export default function DashboardSekolah() {
   const [loading, setLoading] = useState(true);
   
   const [filterKategori, setFilterKategori] = useState<'SEMUA' | 'LOMBA' | 'LULUSAN' | 'TKA'>('SEMUA');
-  
-  // STATE MANTAP SHARE
   const [kategoriShare, setKategoriShare] = useState('SEMUA');
-  
   const [listReaksi, setListReaksi] = useState<Reaksi[]>([]);
   const [listKomentar, setListKomentar] = useState<Komentar[]>([]);
   const [expandedKaryaId, setExpandedKaryaId] = useState<string | null>(null);
@@ -85,6 +79,17 @@ export default function DashboardSekolah() {
   const [karyaTerbaruSekolah, setKaryaTerbaruSekolah] = useState<GaleriInovasiItem | null>(null);
 
   const defaultComments = [ "Luar biasa, sangat menginspirasi! 🚀", "Inovasi yang cerdas & solutif. 💡", "Praktik baik yang patut dicontoh. 👏", "Sangat kreatif, maju terus! 🔥", "Izin mengadaptasi program ini. ✨" ];
+
+  useEffect(() => {
+    if (!loading && location.hash) {
+      const element = document.getElementById(location.hash.substring(1));
+      if (element) {
+        setTimeout(() => {
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 300); 
+      }
+    }
+  }, [location.hash, loading]);
 
   const fetchInteraksi = async () => {
     try {
@@ -315,7 +320,7 @@ export default function DashboardSekolah() {
     const cardKomentar = listKomentar.filter(k => k.praktik_baik_id === karya.id);
     const isExpanded = expandedKaryaId === karya.id;
     return (
-      <div key={karya.id} className="transition-all duration-300 group flex flex-col justify-between rounded-3xl p-6 bg-white border-2 border-black shadow-neo hover:-translate-y-1 hover:shadow-neo-md dark:bg-slate-900/80 dark:border-slate-800 dark:shadow-xl dark:hover:border-cyan-500/50">
+      <div key={karya.id} className="transition-all duration-300 group flex flex-col justify-between rounded-3xl p-6 bg-white border-2 border-black shadow-neo hover:-translate-y-1 hover:shadow-neo-md dark:bg-slate-900/80 dark:border-slate-800 dark:shadow-xl dark:hover:border-cyan-500/50 relative z-10">
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <span className={`text-[10px] font-mono font-bold px-3 py-1 rounded-full uppercase tracking-wider ${tipe === 'VIDEO' ? 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20' : tipe === 'IMAGE' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20' : 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border border-blue-500/20'}`}>
@@ -326,7 +331,6 @@ export default function DashboardSekolah() {
           <h3 className="font-black text-lg text-black dark:text-white group-hover:text-cyan-600 dark:group-hover:text-cyan-300 transition-colors leading-snug">{karya.judul}</h3>
           <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed line-clamp-2 italic">"{karya.deskripsi}"</p>
 
-          {/* Menambahkan Label Atribut MANTAP Share */}
           <div className="flex flex-wrap gap-2 pt-1">
             {karya.kategori_program && <span className="px-2 py-1 bg-purple-100 text-purple-700 dark:bg-purple-500/10 dark:text-purple-400 border border-purple-200 dark:border-purple-500/20 rounded-md text-[9px] font-black uppercase tracking-wider">{karya.kategori_program}</span>}
             {karya.tanggal_pelaksanaan && <span className="px-2 py-1 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-md text-[9px] font-bold">📅 {karya.tanggal_pelaksanaan}</span>}
@@ -346,7 +350,6 @@ export default function DashboardSekolah() {
                 <div className="w-full h-36 rounded-2xl overflow-hidden bg-slate-200 dark:bg-slate-950 border-2 border-black dark:border-slate-800 group/img relative">
                   <img src={urlMentah} alt={karya.judul} className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-500" />
                 </div>
-                {/* Tombol Lihat Detail */}
                 <a href={urlMentah} target="_blank" rel="noreferrer" className="w-full py-2 px-4 rounded-xl font-mono text-xs font-bold flex items-center justify-center gap-2 transition-all bg-yellow-400 text-black border-2 border-black shadow-neo hover:-translate-y-0.5 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-cyan-400 dark:border-transparent dark:shadow-none">
                   <span>👁️</span> Lihat Detail ↗
                 </a>
@@ -421,14 +424,13 @@ export default function DashboardSekolah() {
     );
   };
 
-  if (loading) return <div className="h-96 flex items-center justify-center font-mono animate-pulse text-cyan-600 dark:text-cyan-400">Menghubungkan ke Satelit PENA AI...</div>;
+  if (loading) return <div className="h-96 flex items-center justify-center font-mono animate-pulse text-cyan-600 dark:text-cyan-400 relative z-10">Menghubungkan ke Satelit PENA AI...</div>;
   
   const pJ1 = grafikPrestasi.total > 0 ? (grafikPrestasi.juara1 / grafikPrestasi.total) * 100 : 0;
   const pJ2 = grafikPrestasi.total > 0 ? (grafikPrestasi.juara2 / grafikPrestasi.total) * 100 : 0;
   const pJ3 = grafikPrestasi.total > 0 ? (grafikPrestasi.juara3 / grafikPrestasi.total) * 100 : 0;
   const pJL = grafikPrestasi.total > 0 ? (grafikPrestasi.lainnya / grafikPrestasi.total) * 100 : 0;
 
-  // LOGIKA 1 TERBARU + 2 TERPOPULER UNTUK MANTAP SHARE
   const galeriTerfilter = galeri.filter(item => kategoriShare === 'SEMUA' || item.kategori_program === kategoriShare);
   const sortedByDate = [...galeriTerfilter].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
   
@@ -447,49 +449,47 @@ export default function DashboardSekolah() {
   return (
     <div className="space-y-8 animate-fade-in pb-16 font-sans select-none max-w-7xl mx-auto w-full relative text-slate-900 dark:text-slate-100">
       
-      {/* HEADER & PROFIL SEKOLAH TERPADU */}
-      <div className="relative rounded-3xl overflow-hidden shadow-neo mb-6 border-4 border-black dark:border-2 dark:border-slate-800 dark:shadow-2xl w-full flex flex-col justify-end min-h-75 sm:min-h-100">
-        {/* Latar Belakang Gambar Full tanpa efek zoom */}
-        <div className="absolute inset-0 z-0 pointer-events-none">
-          <img src={dashboardPena} alt="PENA Enterprise" className="w-full h-full object-cover object-top" />
-          <div className="absolute inset-0 bg-linear-to-t from-black/20 to-transparent dark:from-slate-950/80 dark:to-transparent" />
+      {/* 🌟 WATERMARK LOGO SEKOLAH DINAMIS (DI LAPISAN PALING BAWAH) */}
+      {liveProfile?.avatar_url && (
+        <div className="fixed inset-0 lg:pl-72 pointer-events-none z-0 flex items-center justify-center overflow-hidden p-8">
+          <img 
+            src={liveProfile.avatar_url} 
+            alt="Watermark" 
+            className="w-full max-w-2xl sm:max-w-3xl h-auto object-contain opacity-[0.15] dark:opacity-[0.12] transition-all duration-500 transform scale-100 select-none"
+          />
         </div>
+      )}
+
+      {/* HEADER & PROFIL SEKOLAH (VERSI KOMPAK) */}
+      <div className="relative z-10 bg-linear-to-r from-white via-indigo-50 to-fuchsia-50 border-4 border-black shadow-neo rounded-3xl p-6 sm:p-8 mb-6 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 dark:bg-[#061030]/80 dark:border-2 dark:border-cyan-500/30 dark:shadow-[0_4px_20px_rgba(6,182,212,0.15)] overflow-hidden transition-all hover:-translate-y-1 hover:shadow-neo-md">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl pointer-events-none -z-10 dark:bg-cyan-500/10"></div>
         
-        {/* Badge Otoritas */}
-        <div className="absolute top-4 right-4 z-10 px-4 py-2 rounded-xl font-mono text-[10px] font-black uppercase tracking-wider backdrop-blur-md bg-white/95 border-2 border-black text-black shadow-neo-sm dark:bg-cyan-500/10 dark:border-cyan-500/30 dark:text-cyan-400 dark:shadow-none">
-          OTORITAS: SEKOLAH
-        </div>
-
-        {/* Konten Profil di Atas Banner (Dibungkus Card Neo-Brutalist) */}
-        <div className="relative z-10 p-4 sm:p-6 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mt-auto w-full">
+        <div className="flex items-center gap-5 z-10">
+          {liveProfile?.avatar_url ? (
+            <img src={liveProfile.avatar_url} alt="Logo" className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover p-1.5 bg-white shrink-0 border-2 border-black dark:border-slate-600 shadow-sm" />
+          ) : (
+            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl flex flex-col items-center justify-center shrink-0 font-mono bg-yellow-400 border-2 border-black text-black dark:bg-slate-800 dark:border-slate-700 dark:text-cyan-400 shadow-sm"><span className="text-3xl font-black">🏫</span></div>
+          )}
           
-          {/* WADAH IDENTITAS (NAMEPLATE) */}
-          <div className="flex items-center gap-4 bg-white/95 backdrop-blur-md border-2 border-black p-3 sm:p-4 rounded-2xl shadow-neo dark:bg-slate-900/90 dark:border-slate-700 dark:shadow-none max-w-2xl">
-            {liveProfile?.avatar_url ? (
-              <img src={liveProfile.avatar_url} alt="Logo" className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl object-cover p-1 bg-white shrink-0 border-2 border-black dark:border-slate-600" />
-            ) : (
-              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl flex flex-col items-center justify-center shrink-0 font-mono bg-yellow-400 border-2 border-black text-black dark:bg-slate-800 dark:border-slate-700 dark:text-cyan-400"><span className="text-2xl font-black">🏫</span></div>
-            )}
-            <div className="mb-0 pr-2">
-              <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-black uppercase tracking-wider border-2 bg-blue-100 text-blue-800 border-blue-400 dark:bg-cyan-500/10 dark:border-cyan-500/20 dark:text-cyan-400 dark:border">NPSN: {liveProfile?.nomor_induk || '---'}</span>
-                <span className="px-2 py-0.5 rounded-full text-[9px] font-black border-2 bg-green-100 text-green-800 border-green-400 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20 dark:border">Satuan Pendidikan</span>
-              </div>
-              <h1 className="text-lg sm:text-xl font-black tracking-tight text-black dark:text-white leading-tight">{dataSekolah?.nama_sekolah || liveProfile?.nama_lengkap || "Nama Belum Terdaftar"}</h1>
-              <p className="text-[10px] sm:text-xs font-bold text-slate-700 dark:text-slate-300 mt-1">👤 Kepsek: <strong className="text-blue-700 dark:text-cyan-300">{dataSekolah?.nama_kepala_sekolah || "Belum dikonfigurasi"}</strong></p>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap mb-2">
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-black uppercase tracking-wider border-2 bg-blue-100 text-blue-800 border-blue-400 dark:bg-cyan-500/10 dark:border-cyan-500/20 dark:text-cyan-400 dark:border">NPSN: {liveProfile?.nomor_induk || '---'}</span>
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-black border-2 bg-green-100 text-green-800 border-green-400 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20 dark:border">Satuan Pendidikan</span>
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-black border-2 bg-slate-100 text-slate-800 border-slate-400 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600 dark:border">OTORITAS: SEKOLAH</span>
             </div>
+            <h1 className="text-xl sm:text-3xl font-black tracking-tight text-black dark:text-white leading-tight">{dataSekolah?.nama_sekolah || liveProfile?.nama_lengkap || "Nama Belum Terdaftar"}</h1>
+            <p className="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300 mt-1">👤 Kepsek: <strong className="text-blue-700 dark:text-cyan-400">{dataSekolah?.nama_kepala_sekolah || "Belum dikonfigurasi"}</strong></p>
           </div>
-
-          <button onClick={() => setIsEditing(!isEditing)} className="px-6 py-3.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all cursor-pointer border-2 bg-white text-black border-black shadow-neo hover:-translate-y-0.5 hover:shadow-neo-md dark:bg-slate-800 dark:hover:bg-slate-700 dark:border-slate-700 dark:text-cyan-400 dark:shadow-none dark:hover:translate-y-0 shrink-0">
-            {isEditing ? "❌ Tutup Panel" : "⚙️ Edit Profil & Data Pokok"}
-          </button>
         </div>
+
+        <button onClick={() => setIsEditing(!isEditing)} className="w-full lg:w-auto px-6 py-3.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all cursor-pointer border-2 bg-white text-black border-black shadow-neo hover:-translate-y-0.5 hover:shadow-neo-md dark:bg-slate-800 dark:hover:bg-slate-700 dark:border-slate-700 dark:text-cyan-400 dark:shadow-none dark:hover:translate-y-0 shrink-0 z-10">
+          {isEditing ? "❌ Tutup Panel" : "⚙️ Edit Profil & Data Pokok"}
+        </button>
       </div>
       
       {/* INFO STATISTIK SEKOLAH */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-        {/* Detail Wilayah & Jumlah Personal */}
-        <div className="p-6 sm:p-8 rounded-3xl transition-colors bg-white border-4 border-black shadow-neo dark:bg-slate-900/60 dark:border-2 dark:border-slate-800 dark:shadow-xl h-full flex flex-col justify-between">
+      <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+        <div className="p-6 sm:p-8 rounded-3xl transition-all duration-300 hover:-translate-y-1 hover:shadow-neo-md bg-linear-to-br from-blue-50 to-cyan-50 border-4 border-black shadow-neo dark:bg-[#061030]/80 dark:border-2 dark:border-blue-500/30 dark:shadow-[0_4px_20px_rgba(59,130,246,0.1)] h-full flex flex-col justify-between">
           <div className="space-y-4">
              <div className="flex items-start gap-3">
                <span className="text-xl">📍</span>
@@ -527,7 +527,6 @@ export default function DashboardSekolah() {
              </div>
           </div>
 
-          {/* KARYA INOVASI TERBARU SEKOLAH */}
           <div className="mt-6 pt-4 border-t-2 border-black/10 dark:border-slate-800/50">
             <p className="text-[10px] font-mono font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">🚀 Unggahan Karya Terbaru Sekolah</p>
             {karyaTerbaruSekolah ? (
@@ -541,13 +540,11 @@ export default function DashboardSekolah() {
               </div>
             )}
           </div>
-
         </div>
 
-        {/* Kanan: Grafik Batang (Bisa Diklik) */}
         <div 
           onClick={() => setShowDetailPrestasi(true)}
-          className="p-6 sm:p-8 rounded-3xl flex flex-col justify-center cursor-pointer transition-colors group relative bg-white border-4 border-black shadow-neo hover:bg-slate-50 dark:bg-slate-900/60 dark:border-2 dark:border-slate-800 dark:shadow-xl dark:hover:bg-slate-900/80 h-full"
+          className="p-6 sm:p-8 rounded-3xl flex flex-col justify-center cursor-pointer transition-all duration-300 group bg-linear-to-br from-emerald-50 to-teal-50 border-4 border-black shadow-neo hover:-translate-y-1 hover:shadow-neo-md dark:bg-[#061030]/80 dark:border-2 dark:border-emerald-500/30 dark:shadow-[0_4px_20px_rgba(16,185,129,0.1)] h-full"
         >
           <div className="absolute top-4 right-4 px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider font-mono opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 border-2 bg-yellow-400 text-black border-black shadow-neo dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/30 dark:shadow-lg dark:shadow-cyan-500/20 dark:border">
             <span>🔍</span> Lihat Daftar Nama Siswa
@@ -571,41 +568,49 @@ export default function DashboardSekolah() {
         </div>
       </div>
 
-      {/* RENDER KOMPONEN ANAK */}
-
       {isEditing && (
-        <FormEditSekolah 
-          formNamaSekolah={formNamaSekolah} setFormNamaSekolah={setFormNamaSekolah}
-          formKepsek={formKepsek} setFormKepsek={setFormKepsek}
-          formNipKepsek={formNipKepsek} setFormNipKepsek={setFormNipKepsek}
-          formAlamat={formAlamat} setFormAlamat={setFormAlamat}
-          formTotalGuru={formTotalGuru} setFormTotalGuru={setFormTotalGuru}
-          formTotalMurid={formTotalMurid} setFormTotalMurid={setFormTotalMurid}
-          formTotalTendik={formTotalTendik} setFormTotalTendik={setFormTotalTendik}
-          setFormLogoFile={setFormLogoFile} setIsEditing={setIsEditing}
-          formCabdin={formCabdin} setFormCabdin={setFormCabdin}
-          formKabKota={formKabKota} setFormKabKota={setFormKabKota}
-          handleSimpanPemutakhiran={handleSimpanPemutakhiran} saving={saving}
-        />
+        <div className="relative z-10">
+          <FormEditSekolah 
+            formNamaSekolah={formNamaSekolah} setFormNamaSekolah={setFormNamaSekolah}
+            formKepsek={formKepsek} setFormKepsek={setFormKepsek}
+            formNipKepsek={formNipKepsek} setFormNipKepsek={setFormNipKepsek}
+            formAlamat={formAlamat} setFormAlamat={setFormAlamat}
+            formTotalGuru={formTotalGuru} setFormTotalGuru={setFormTotalGuru}
+            formTotalMurid={formTotalMurid} setFormTotalMurid={setFormTotalMurid}
+            formTotalTendik={formTotalTendik} setFormTotalTendik={setFormTotalTendik}
+            setFormLogoFile={setFormLogoFile} setIsEditing={setIsEditing}
+            formCabdin={formCabdin} setFormCabdin={setFormCabdin}
+            formKabKota={formKabKota} setFormKabKota={setFormKabKota}
+            handleSimpanPemutakhiran={handleSimpanPemutakhiran} saving={saving}
+          />
+        </div>
       )}
 
-      <PapanKlasemen 
-        filterKategori={filterKategori} 
-        setFilterKategori={setFilterKategori}
-        papanDataUtuh={papanPrestasi} 
-      />
+      {/* JANGKAR 1: KLASEMEN */}
+      <div id="klasemen" className="scroll-mt-24 relative z-10">
+        <PapanKlasemen 
+          filterKategori={filterKategori} 
+          setFilterKategori={setFilterKategori}
+          papanDataUtuh={papanPrestasi} 
+        />
+      </div>
 
-      <GaleriInovasi 
-        galeriDitampilkan={galeriDitampilkan} galeriTotal={galeriTerfilter.length}
-        tampilSemuaInovasi={tampilSemuaInovasi} setTampilSemuaInovasi={setTampilSemuaInovasi}
-        renderKaryaInovasiCard={renderKaryaInovasiCard}
-        kategoriShare={kategoriShare} setKategoriShare={setKategoriShare}
-      />
+      {/* JANGKAR 2: MANTAP SHARE */}
+      <div id="mantap" className="scroll-mt-24 relative z-10">
+        <GaleriInovasi 
+          galeriDitampilkan={galeriDitampilkan} galeriTotal={galeriTerfilter.length}
+          tampilSemuaInovasi={tampilSemuaInovasi} setTampilSemuaInovasi={setTampilSemuaInovasi}
+          renderKaryaInovasiCard={renderKaryaInovasiCard}
+          kategoriShare={kategoriShare} setKategoriShare={setKategoriShare}
+        />
+      </div>
 
       {showDetailPrestasi && (
-        <ModalDetailPrestasi 
-          myPrestasiDetail={myPrestasiDetail} setShowDetailPrestasi={setShowDetailPrestasi}
-        />
+        <div className="relative z-50">
+          <ModalDetailPrestasi 
+            myPrestasiDetail={myPrestasiDetail} setShowDetailPrestasi={setShowDetailPrestasi}
+          />
+        </div>
       )}
 
     </div>

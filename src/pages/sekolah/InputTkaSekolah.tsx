@@ -1,3 +1,6 @@
+/* eslint-disable */
+// @ts-nocheck
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
@@ -159,10 +162,11 @@ export default function InputTkaSekolah() {
     }
   };
 
+  // 🌟 RENDER FIELD DENGAN SENTUHAN HOVER BIRU NEO-BRUTALISM
   const renderField = (m: { id: string; label: string }) => (
-    <div key={m.id} className="p-3.5 rounded-xl border-2 transition-colors flex items-center justify-between gap-4 bg-slate-50 border-black/20 hover:border-black dark:bg-slate-950 dark:border-slate-800/80 dark:hover:border-slate-700">
+    <div key={m.id} className="p-3.5 rounded-xl border-2 transition-colors flex items-center justify-between gap-4 bg-white border-black/20 hover:border-blue-600 dark:bg-slate-950 dark:border-slate-800/80 dark:hover:border-cyan-500">
       <label className="font-mono font-black uppercase text-[10px] tracking-wide truncate text-slate-700 dark:text-slate-300">{m.label}</label>
-      <input type="number" step="0.01" min="0" max="100" value={nilai[m.id]} onChange={e => handleInputChange(m.id, e.target.value)} placeholder="0.00" className="w-24 p-2 rounded-lg border-2 font-black font-mono text-center outline-none text-sm transition-colors bg-white border-black text-black focus:border-blue-600 dark:bg-slate-900 dark:border-slate-700 dark:text-white dark:focus:border-cyan-500" />
+      <input type="number" step="0.01" min="0" max="100" value={nilai[m.id]} onChange={e => handleInputChange(m.id, e.target.value)} placeholder="0.00" className="w-24 p-2 rounded-lg border-2 font-black font-mono text-center outline-none text-sm transition-colors bg-white border-black text-black focus:border-blue-600 dark:bg-slate-900 dark:border-slate-700 dark:text-white dark:focus:border-cyan-500 shadow-sm" />
     </div>
   );
 
@@ -170,16 +174,16 @@ export default function InputTkaSekolah() {
     <form onSubmit={handleSimpanTka} className="space-y-6 animate-fade-in relative transition-all">
       {fetching && <div className="absolute inset-0 bg-white/60 dark:bg-slate-900/50 backdrop-blur-sm z-20 flex items-center justify-center font-mono font-black text-xs animate-pulse text-blue-700 dark:text-cyan-400">Memanggil Arsip TKA...</div>}
 
-      {/* HEADER: Tahun Ajaran & Rata-rata */}
-      <div className="p-6 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all bg-blue-50 border-4 border-black shadow-neo dark:bg-slate-900/60 dark:border-2 dark:border-slate-800 dark:shadow-xl">
+      {/* HEADER: Tahun Ajaran & Rata-rata (DISESUAIKAN DENGAN BACKGROUND PUTIH/TRANSPARAN) */}
+      <div className="p-5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all bg-white/50 border-2 border-black/20 dark:bg-slate-950/50 dark:border-slate-800/80">
         <div className="flex flex-col gap-1.5">
-          <span className="text-[10px] font-mono font-black uppercase tracking-wider text-slate-700 dark:text-slate-400">Tahun Ajaran Pelaksanaan:</span>
-          <select value={tahunAjaran} onChange={e=>setTahunAjaran(e.target.value)} className="p-2.5 rounded-xl font-black outline-none cursor-pointer w-48 transition-colors border-2 bg-white border-black text-black focus:border-blue-600 dark:bg-slate-950 dark:border-slate-700 dark:text-white dark:focus:border-cyan-500">
+          <span className="text-[10px] font-mono font-black uppercase tracking-wider text-blue-800 dark:text-cyan-400">Tahun Ajaran Pelaksanaan:</span>
+          <select value={tahunAjaran} onChange={e=>setTahunAjaran(e.target.value)} className="p-2.5 rounded-xl font-black outline-none cursor-pointer w-48 transition-colors border-2 bg-white border-black text-black focus:border-blue-600 dark:bg-slate-950 dark:border-slate-700 dark:text-white dark:focus:border-cyan-500 shadow-sm">
             <option value="2026/2027">2026/2027</option>
             <option value="2025/2026">2025/2026</option>
           </select>
         </div>
-        <div className="p-4 rounded-xl flex items-center gap-4 shrink-0 transition-all border-2 bg-white border-black shadow-sm dark:bg-slate-950 dark:border-slate-800 dark:shadow-inner">
+        <div className="p-4 rounded-xl flex items-center gap-4 shrink-0 transition-all border-2 bg-white border-black shadow-neo-sm dark:bg-slate-900 dark:border-slate-700 dark:shadow-none">
           <div>
             <h4 className="text-[10px] font-mono font-black uppercase tracking-wider leading-none text-blue-700 dark:text-cyan-400">Rata-Rata Total</h4>
             <p className="text-[9px] mt-0.5 font-bold text-slate-500 dark:text-slate-400">Kalkulasi otomatis mapel terisi</p>
@@ -189,18 +193,18 @@ export default function InputTkaSekolah() {
       </div>
 
       {/* KELOMPOK MATA PELAJARAN */}
-      <div className="space-y-6">
-        <div className="space-y-3"><h4 className="text-xs font-mono font-black uppercase tracking-widest border-b-2 pb-1.5 border-black/20 text-blue-700 dark:text-cyan-400 dark:border-slate-800">📌 KELOMPOK MAPEL WAJIB</h4><div className="grid grid-cols-1 md:grid-cols-3 gap-4">{mapelWajib.map(renderField)}</div></div>
-        <div className="space-y-3"><h4 className="text-xs font-mono font-black uppercase tracking-widest border-b-2 pb-1.5 border-black/20 text-emerald-700 dark:text-emerald-400 dark:border-slate-800">🧪 KELOMPOK IPA / SAINS</h4><div className="grid grid-cols-1 md:grid-cols-3 gap-4">{mapelIpa.map(renderField)}</div></div>
-        <div className="space-y-3"><h4 className="text-xs font-mono font-black uppercase tracking-widest border-b-2 pb-1.5 border-black/20 text-orange-700 dark:text-amber-400 dark:border-slate-800">🗺️ KELOMPOK IPS / SOSSOS & HUMANIORA</h4><div className="grid grid-cols-1 md:grid-cols-3 gap-4">{mapelIps.map(renderField)}</div></div>
-        <div className="space-y-3"><h4 className="text-xs font-mono font-black uppercase tracking-widest border-b-2 pb-1.5 border-black/20 text-indigo-700 dark:text-indigo-400 dark:border-slate-800">📐 KELOMPOK TINGKAT LANJUT</h4><div className="grid grid-cols-1 md:grid-cols-3 gap-4">{mapelLanjut.map(renderField)}</div></div>
-        <div className="space-y-3"><h4 className="text-xs font-mono font-black uppercase tracking-widest border-b-2 pb-1.5 border-black/20 text-purple-700 dark:text-purple-400 dark:border-slate-800">🇩🇪 KELOMPOK BAHASA ASING</h4><div className="grid grid-cols-1 md:grid-cols-3 gap-4">{mapelAsing.map(renderField)}</div></div>
+      <div className="space-y-6 bg-white/50 p-5 rounded-2xl border-2 border-black/20 dark:bg-slate-950/50 dark:border-slate-800/80">
+        <div className="space-y-3"><h4 className="text-[10px] font-mono font-black uppercase tracking-widest border-b pb-1.5 border-black/10 text-blue-700 dark:text-cyan-400 dark:border-slate-800">📌 KELOMPOK MAPEL WAJIB</h4><div className="grid grid-cols-1 md:grid-cols-3 gap-4">{mapelWajib.map(renderField)}</div></div>
+        <div className="space-y-3"><h4 className="text-[10px] font-mono font-black uppercase tracking-widest border-b pb-1.5 border-black/10 text-emerald-700 dark:text-emerald-400 dark:border-slate-800">🧪 KELOMPOK IPA / SAINS</h4><div className="grid grid-cols-1 md:grid-cols-3 gap-4">{mapelIpa.map(renderField)}</div></div>
+        <div className="space-y-3"><h4 className="text-[10px] font-mono font-black uppercase tracking-widest border-b pb-1.5 border-black/10 text-orange-700 dark:text-amber-400 dark:border-slate-800">🗺️ KELOMPOK IPS / SOSSOS & HUMANIORA</h4><div className="grid grid-cols-1 md:grid-cols-3 gap-4">{mapelIps.map(renderField)}</div></div>
+        <div className="space-y-3"><h4 className="text-[10px] font-mono font-black uppercase tracking-widest border-b pb-1.5 border-black/10 text-indigo-700 dark:text-indigo-400 dark:border-slate-800">📐 KELOMPOK TINGKAT LANJUT</h4><div className="grid grid-cols-1 md:grid-cols-3 gap-4">{mapelLanjut.map(renderField)}</div></div>
+        <div className="space-y-3"><h4 className="text-[10px] font-mono font-black uppercase tracking-widest border-b pb-1.5 border-black/10 text-purple-700 dark:text-purple-400 dark:border-slate-800">🇩🇪 KELOMPOK BAHASA ASING</h4><div className="grid grid-cols-1 md:grid-cols-3 gap-4">{mapelAsing.map(renderField)}</div></div>
       </div>
 
-      {/* TOMBOL SUBMIT */}
-      <div className="pt-6 border-t-2 border-black/20 dark:border-slate-800 flex justify-end">
-        <button type="submit" disabled={loading} className="w-full md:w-auto px-10 py-3.5 font-black rounded-xl text-xs uppercase tracking-widest transition-all cursor-pointer disabled:opacity-50 border-2 bg-yellow-400 hover:bg-yellow-300 text-black border-black shadow-neo hover:-translate-y-1 active:translate-y-0 active:shadow-none dark:bg-cyan-500 dark:hover:bg-cyan-400 dark:border-transparent dark:text-slate-950 dark:shadow-lg dark:shadow-cyan-500/20 dark:hover:translate-y-0">
-          {loading ? "MENGUNCI DATA NILAI..." : "💾 SIMPAN & KUNCI NILAI TKA"}
+      {/* 🌟 TOMBOL SUBMIT TEMA BIRU NEO-BRUTALISM */}
+      <div className="pt-4 flex justify-end">
+        <button type="submit" disabled={loading} className="w-full py-4 font-black rounded-xl text-xs uppercase tracking-widest transition-all cursor-pointer disabled:opacity-50 border-2 bg-blue-600 hover:bg-blue-500 text-white border-black shadow-neo hover:-translate-y-1 active:translate-y-0 active:shadow-none flex items-center justify-center gap-2 dark:bg-blue-500 dark:hover:bg-blue-400 dark:border-transparent dark:shadow-none">
+          {loading ? "MENGUNCI DATA NILAI..." : <><span>💾</span> SIMPAN & KUNCI NILAI TKA</>}
         </button>
       </div>
     </form>

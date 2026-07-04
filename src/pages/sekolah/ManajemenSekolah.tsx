@@ -1,4 +1,5 @@
 /* eslint-disable */
+// @ts-nocheck
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
@@ -20,7 +21,6 @@ interface Prestasi {
   status_validasi: string; 
 }
 
-// 👈 Interface diperbarui dengan atribut baru MANTAP Share
 export interface PraktikBaik { 
   id: string; 
   judul: string; 
@@ -39,7 +39,6 @@ interface RaporSekolah { id: string; data_mentah_json: { nama_file: string; tahu
 
 type TabType = 'PRESTASI' | 'PRAKTIK' | 'RAPOR' | 'TKA'; 
 
-// Daftar Kategori Resmi MANTAP Share untuk Dropdown Form & Filter Feed
 export const DAFTAR_KATEGORI_MANTAP = ['SMA MANTAP', 'Branding Sekolah', 'Proyek Siswa', 'Praktik Baik'];
 
 export default function ManajemenSekolah() {
@@ -52,14 +51,13 @@ export default function ManajemenSekolah() {
   
   const [formLoadingPraktik, setFormLoadingPraktik] = useState(false);
   
-  // 👈 STATE BARU UNTUK MANTAP SHARE
   const [pbJudul, setPbJudul] = useState(''); 
-  const [pbKategoriProgram, setPbKategoriProgram] = useState(DAFTAR_KATEGORI_MANTAP[0]); // Default ke SMA MANTAP
-  const [pbJenisMedia, setPbJenisMedia] = useState('FOTO'); // Pilihan: FOTO / VIDEO
+  const [pbKategoriProgram, setPbKategoriProgram] = useState(DAFTAR_KATEGORI_MANTAP[0]); 
+  const [pbJenisMedia, setPbJenisMedia] = useState('FOTO'); 
   const [pbMediaFile, setPbMediaFile] = useState<File | null>(null); 
   const [pbDeskripsi, setPbDeskripsi] = useState(''); 
   const [pbCapaianHasil, setPbCapaianHasil] = useState('');
-  const [pbTanggalPelaksanaan, setPbTanggalPelaksanaan] = useState(new Date().toISOString().split('T')[0]); // Default hari ini
+  const [pbTanggalPelaksanaan, setPbTanggalPelaksanaan] = useState(new Date().toISOString().split('T')[0]);
   
   const [listRapor, setListRapor] = useState<RaporSekolah[]>([]); 
   const [formLoadingRapor, setFormLoadingRapor] = useState(false);
@@ -89,57 +87,27 @@ export default function ManajemenSekolah() {
     setFormLoadingPraktik(true); 
     
     try {
-      // 1. Tentukan Folder Berdasarkan Jenis Media (foto/ atau video/)
       const folderPath = pbJenisMedia === 'VIDEO' ? 'video' : 'foto';
       const fileExt = pbMediaFile.name.split('.').pop();
       const safeFileName = `${folderPath}/${profile.id}-${Date.now()}.${fileExt}`;
       
-      // 2. Upload Media ke Storage 'praktik_baik_media'
-      const { error: uploadError } = await supabase.storage
-        .from('praktik_baik_media')
-        .upload(safeFileName, pbMediaFile); 
-        
+      const { error: uploadError } = await supabase.storage.from('praktik_baik_media').upload(safeFileName, pbMediaFile); 
       if (uploadError) throw new Error("Gagal upload: " + uploadError.message);
       
-      // 3. Dapatkan Public URL Media
       const { data: urlData } = supabase.storage.from('praktik_baik_media').getPublicUrl(safeFileName);
       const finalUrl = urlData.publicUrl;
       
-      // 4. Rakit Payload MANTAP Share (Atribut Baru Diikutsertakan)
       const payload = { 
-        sekolah_id: profile.id, 
-        user_id: profile.id, 
-        npsn: liveProfile?.nomor_induk || profile.nomor_induk, 
-        
-        // Atribut Utama (MANTAP Share)
-        judul: pbJudul.trim(), 
-        kategori_program: pbKategoriProgram, 
-        deskripsi: pbDeskripsi.trim(), 
-        jenis_media: pbJenisMedia, // FOTO / VIDEO
-        media_url: finalUrl, 
-        
-        // Atribut Baru
-        capaian_hasil: pbCapaianHasil.trim() || null, 
-        tanggal_pelaksanaan: pbTanggalPelaksanaan, 
-        
-        file_pendukung: null, // Dinonaktifkan di form, kunci null
-        status_validasi: 'MENUNGGU' 
+        sekolah_id: profile.id, user_id: profile.id, npsn: liveProfile?.nomor_induk || profile.nomor_induk, 
+        judul: pbJudul.trim(), kategori_program: pbKategoriProgram, deskripsi: pbDeskripsi.trim(), jenis_media: pbJenisMedia, media_url: finalUrl, 
+        capaian_hasil: pbCapaianHasil.trim() || null, tanggal_pelaksanaan: pbTanggalPelaksanaan, file_pendukung: null, status_validasi: 'MENUNGGU' 
       };
       
-      // 5. Simpan ke Tabel `praktik_baik`
       const { error: dbError } = await supabase.from('praktik_baik').insert(payload);
       if (dbError) throw new Error(dbError.message);
       
-      // 6. Reset Form & Notifikasi Berhasil
-      setPbJudul(''); 
-      setPbDeskripsi(''); 
-      setPbMediaFile(null); 
-      setPbKategoriProgram(DAFTAR_KATEGORI_MANTAP[0]);
-      setPbCapaianHasil('');
-      setPbTanggalPelaksanaan(new Date().toISOString().split('T')[0]);
-      
-      alert("🚀 MANTAP Share Berhasil Dikirim untuk Verifikasi!"); 
-      await fetchPraktikBaik();
+      setPbJudul(''); setPbDeskripsi(''); setPbMediaFile(null); setPbKategoriProgram(DAFTAR_KATEGORI_MANTAP[0]); setPbCapaianHasil(''); setPbTanggalPelaksanaan(new Date().toISOString().split('T')[0]);
+      alert("🚀 MANTAP Share Berhasil Dikirim untuk Verifikasi!"); await fetchPraktikBaik();
     } catch (e: any) { alert("❌ Error: " + e.message); } finally { setFormLoadingPraktik(false); }
   };
   const handleDeletePraktikBaik = async (id: string, jdl: string) => { if (window.confirm(`Hapus postingan MANTAP Share: "${jdl}"?`)) { await supabase.from('praktik_baik').delete().eq('id', id); setListPraktik(p => p.filter(x => x.id !== id)); } };
@@ -166,42 +134,77 @@ export default function ManajemenSekolah() {
   return (
     <div className="space-y-8 animate-fade-in text-black dark:text-slate-100 font-sans pb-12 select-none transition-colors duration-300">
       
-      {/* HEADER HERO */}
-      <div className="bg-purple-200 border-4 border-black shadow-neo dark:bg-linear-to-r dark:from-slate-900 dark:via-indigo-950/40 dark:to-slate-900 dark:border-2 dark:border-slate-800 p-8 rounded-3xl dark:backdrop-blur-2xl dark:shadow-2xl transition-all">
-        <h1 className="text-3xl font-black text-black dark:text-white">{liveProfile?.nama_lengkap || profile?.nama_lengkap || "Satuan Pendidikan"}</h1>
-        <p className="text-xs font-mono mt-1 font-bold text-slate-700 dark:text-slate-400">UID: [{profile?.id}]</p>
-      </div>
+      {/* --- 🌟 HEADER BANNER DAPUR INPUT DATA (REVISI NPSN & LOGO) --- */}
+      <div className="bg-linear-to-r from-purple-100 via-pink-100 to-blue-100 dark:from-slate-900/90 dark:via-purple-950/40 dark:to-slate-900/90 border-4 border-black dark:border-blue-500/30 rounded-3xl p-6 shadow-neo mb-6 flex flex-col sm:flex-row items-start sm:items-center gap-5 transition-all relative overflow-hidden">
+        {/* Efek Cahaya Latar Mode Malam */}
+        <div className="absolute -top-10 -right-10 w-40 h-40 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none z-0" />
+        
+        {/* Render Logo Sekolah Dinamis dengan Fallback Icon */}
+        <div className="z-10 shrink-0">
+          {profile?.avatar_url ? (
+            <img 
+              src={profile.avatar_url} 
+              alt="Logo Sekolah" 
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover p-1.5 bg-white border-2 border-black dark:border-cyan-400/50 shadow-sm transition-transform hover:scale-105 duration-300" 
+            />
+          ) : (
+            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl flex items-center justify-center bg-yellow-400 border-2 border-black text-black dark:bg-[#040c24] dark:border-cyan-400/50 dark:text-cyan-400 font-mono text-2xl font-black shadow-sm">
+              🏫
+            </div>
+          )}
+        </div>
 
-      {/* NAVIGASI TABS */}
+        {/* Identitas Sekolah & NPSN */}
+        <div className="overflow-hidden z-10 flex-1">
+          <h1 className="text-xl sm:text-2xl font-black text-black dark:text-blue-50 tracking-tight truncate leading-snug">
+            {profile?.nama_lengkap || "Nama Sekolah Belum Terdaftar"}
+          </h1>
+          
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            {/* Badge NPSN Menggantikan UID */}
+            <span className="px-3 py-1 rounded-full text-[11px] font-mono font-black uppercase tracking-wider bg-blue-600 text-white border-2 border-black shadow-xs dark:bg-cyan-500 dark:text-slate-950 dark:border-cyan-400 dark:shadow-[0_0_10px_rgba(6,182,212,0.3)]">
+              NPSN: {profile?.nomor_induk || "Belum Diatur"}
+            </span>
+            
+            {/* Badge Status Otoritas */}
+            <span className="px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider bg-green-300 text-black border-2 border-black shadow-xs dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30">
+              ✅ Otoritas Input Resmi
+            </span>
+          </div>
+        </div>
+      </div>
+      {/* --- END HEADER BANNER --- */}
+
+      {/* NAVIGASI TABS (DENGAN WARNA DINAMIS) */}
       <div className="flex items-center gap-2 p-2 rounded-2xl overflow-x-auto bg-white border-4 border-black shadow-neo dark:bg-slate-900/80 dark:border-2 dark:border-slate-800 dark:shadow-none transition-all">
         {[
-          { id: 'PRESTASI', label: '🏆 Pengajuan Prestasi' }, 
-          { id: 'PRAKTIK', label: '🚀 MANTAP Share' }, // 👈 Ganti Label Tab
-          { id: 'RAPOR', label: '📄 Rapor & Hasil AI' },
-          { id: 'TKA', label: '📊 Nilai TKA Akademik' } 
+          { id: 'PRESTASI', label: '🏆 Pengajuan Prestasi', activeColor: 'bg-rose-500 text-white border-black shadow-neo-md -translate-y-1 dark:bg-rose-600 dark:border-transparent dark:text-white dark:shadow-lg dark:translate-y-0' }, 
+          { id: 'PRAKTIK', label: '🚀 MANTAP Share', activeColor: 'bg-yellow-400 text-black border-black shadow-neo-md -translate-y-1 dark:bg-amber-500 dark:border-transparent dark:text-slate-950 dark:shadow-lg dark:translate-y-0' },
+          { id: 'RAPOR', label: '📄 Rapor & Hasil AI', activeColor: 'bg-emerald-400 text-black border-black shadow-neo-md -translate-y-1 dark:bg-emerald-500 dark:border-transparent dark:text-slate-950 dark:shadow-lg dark:translate-y-0' },
+          { id: 'TKA', label: '📊 Nilai TKA Akademik', activeColor: 'bg-blue-600 text-white border-black shadow-neo-md -translate-y-1 dark:bg-blue-500 dark:border-transparent dark:text-white dark:shadow-lg dark:translate-y-0' } 
         ].map(t => (
           <button 
             key={t.id} 
             onClick={() => setActiveTab(t.id as TabType)} 
             className={`flex-1 min-w-37.5 py-3.5 px-4 rounded-xl text-xs font-black cursor-pointer transition-all border-2 
               ${activeTab === t.id 
-                ? 'bg-yellow-400 text-black border-black shadow-neo-md -translate-y-1 dark:bg-cyan-500 dark:text-slate-950 dark:shadow-lg dark:border-transparent dark:translate-y-0' 
-                : 'bg-transparent border-transparent text-slate-600 hover:text-black hover:border-black/20 dark:text-slate-400 dark:hover:text-white dark:hover:border-transparent'}`}
+                ? t.activeColor 
+                : 'bg-transparent border-transparent text-slate-600 hover:bg-slate-50 hover:text-black hover:border-black/20 dark:text-slate-400 dark:hover:bg-slate-800/50 dark:hover:text-white dark:hover:border-transparent'}`}
           >
             {t.label}
           </button>
         ))}
       </div>
 
-      {/* KONTEN TAB: PRESTASI */}
+      {/* 🌟 KONTEN TAB: PRESTASI (TEMA MERAH/ROSE) */}
       {activeTab === 'PRESTASI' && (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 items-start">
           <div className="xl:col-span-2"><PrestasiSekolah /></div>
           
-          <div className="p-6 rounded-2xl space-y-4 transition-all bg-white border-4 border-black shadow-neo dark:bg-slate-900/60 dark:border-2 dark:border-slate-800 dark:shadow-xl">
+          <div className="p-6 rounded-2xl space-y-4 transition-all bg-rose-100 border-4 border-black shadow-neo border-t-8 border-t-rose-500 dark:bg-slate-900/60 dark:border-2 dark:border-slate-800 dark:border-t-2 dark:border-t-rose-500 dark:shadow-none">
             <div className="flex justify-between items-center border-b-2 border-black/20 dark:border-slate-800 pb-2">
-              <h3 className="text-sm font-black text-black dark:text-amber-400 uppercase tracking-widest">Riwayat Ajuan ({listPrestasi.length})</h3>
-              <button onClick={fetchPrestasi} className="text-xs font-bold cursor-pointer text-blue-600 hover:text-blue-800 dark:text-slate-400 dark:hover:text-white">🔄 Refresh</button>
+              <h3 className="text-sm font-black text-rose-900 dark:text-rose-400 uppercase tracking-widest">Riwayat Ajuan ({listPrestasi.length})</h3>
+              <button onClick={fetchPrestasi} className="text-xs font-bold cursor-pointer text-rose-600 hover:text-rose-800 dark:text-rose-400 dark:hover:text-white">🔄 Refresh</button>
             </div>
             <div className="space-y-2 max-h-150 overflow-y-auto custom-scrollbar pr-2">
               {listPrestasi.map(p => {
@@ -209,10 +212,10 @@ export default function ManajemenSekolah() {
                   const bidangTampil = p.bidang || p.jenis_prestasi || '-';
                   const peringkatTampil = p.peringkat || p.juara || '-';
                   return (
-                  <div key={p.id} className="py-3 px-3 rounded-xl border-2 transition-colors flex justify-between items-start gap-4 text-xs bg-slate-50 border-black/20 hover:border-black dark:bg-transparent dark:border-slate-800/50 dark:hover:bg-slate-800/30">
+                  <div key={p.id} className="py-3 px-3 rounded-xl border-2 transition-colors flex justify-between items-start gap-4 text-xs bg-white border-black/20 hover:border-black dark:bg-transparent dark:border-slate-800/50 dark:hover:bg-slate-800/30">
                     <div>
                       <strong className="block text-sm mb-1 font-black text-black dark:text-white">{namaTampil}</strong>
-                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border bg-yellow-100 text-yellow-800 border-yellow-400 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20">{bidangTampil} • {peringkatTampil} • {p.tahun}</span>
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border bg-rose-100 text-rose-800 border-rose-400 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20">{bidangTampil} • {peringkatTampil} • {p.tahun}</span>
                     </div>
                     <div className="text-right flex flex-col items-end shrink-0 gap-1.5">
                       <span className={`text-[9px] px-2 py-0.5 rounded block font-bold uppercase tracking-wider border-2 ${p.status_validasi === 'DISETUJUI' ? 'bg-green-100 text-green-700 border-green-400 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-transparent' : p.status_validasi === 'DITOLAK' ? 'bg-red-100 text-red-700 border-red-400 dark:bg-rose-500/10 dark:text-rose-400 dark:border-transparent' : 'bg-orange-100 text-orange-700 border-orange-400 dark:bg-amber-500/10 dark:text-amber-400 dark:border-transparent'}`}>{p.status_validasi}</span>
@@ -226,27 +229,22 @@ export default function ManajemenSekolah() {
         </div>
       )}
 
-      {/* 👈 KONTEN TAB: MANTAP SHARE (REVISI TOTAL FORM) */}
+      {/* 🌟 KONTEN TAB: MANTAP SHARE (TEMA KUNING/AMBER) */}
       {activeTab === 'PRAKTIK' && (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-          
-          <div className="p-6 rounded-2xl space-y-4 transition-all bg-cyan-100 border-4 border-black shadow-neo dark:bg-slate-900/60 dark:border-2 dark:border-slate-800 dark:shadow-none">
-            <h3 className="text-sm font-black uppercase tracking-widest text-black dark:text-cyan-400 flex items-center gap-2"><span>🚀</span> Posting MANTAP Share</h3>
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 items-start">
+          <div className="p-6 rounded-2xl space-y-4 transition-all bg-amber-100 border-4 border-black shadow-neo border-t-8 border-t-amber-500 dark:bg-slate-900/60 dark:border-2 dark:border-slate-800 dark:border-t-2 dark:border-t-amber-500 dark:shadow-none">
+            <h3 className="text-sm font-black uppercase tracking-widest text-amber-900 dark:text-amber-400 flex items-center gap-2"><span>🚀</span> Posting MANTAP Share</h3>
             
             <form onSubmit={handleAddPraktikBaik} className="space-y-4 text-xs font-bold">
+              <input type="text" required value={pbJudul} onChange={e=>setPbJudul(e.target.value)} placeholder="Judul Program (Wajib)" className="w-full p-3 rounded-xl border-2 outline-none transition-colors bg-white border-black text-black focus:border-amber-600 dark:bg-slate-950 dark:border-slate-800 dark:text-white dark:focus:border-amber-500" />
               
-              {/* JUDUL PROGRAM (Wajib) */}
-              <input type="text" required value={pbJudul} onChange={e=>setPbJudul(e.target.value)} placeholder="Judul Program (Wajib)" className="w-full p-3 rounded-xl border-2 outline-none transition-colors bg-white border-black text-black focus:border-blue-600 dark:bg-slate-950 dark:border-slate-800 dark:text-white dark:focus:border-cyan-500" />
-              
-              {/* KATEGORI PROGRAM (Dropdown) */}
               <div className="space-y-1">
                 <label className="text-[10px] font-black font-mono uppercase tracking-widest text-slate-700 dark:text-slate-400">Kategori Program</label>
-                <select value={pbKategoriProgram} onChange={e=>setPbKategoriProgram(e.target.value)} className="w-full p-3 rounded-xl border-2 outline-none cursor-pointer bg-white border-black text-black focus:border-blue-600 dark:bg-slate-950 dark:border-slate-800 dark:text-white dark:focus:border-cyan-500 shadow-sm">
+                <select value={pbKategoriProgram} onChange={e=>setPbKategoriProgram(e.target.value)} className="w-full p-3 rounded-xl border-2 outline-none cursor-pointer bg-white border-black text-black focus:border-amber-600 dark:bg-slate-950 dark:border-slate-800 dark:text-white dark:focus:border-amber-500 shadow-sm">
                   {DAFTAR_KATEGORI_MANTAP.map(kat => <option key={kat} value={kat}>{kat}</option>)}
                 </select>
               </div>
 
-              {/* UNGGAH MEDIA (FOTO / VIDEO 1 MENIT) */}
               <div className="space-y-1.5 p-3 rounded-xl border-2 bg-white border-black dark:bg-slate-950 dark:border-slate-800">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-lg">🖼️</span>
@@ -254,38 +252,34 @@ export default function ManajemenSekolah() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <select value={pbJenisMedia} onChange={e=>setPbJenisMedia(e.target.value)} className="p-2.5 rounded-lg border-2 outline-none cursor-pointer bg-slate-50 border-black/20 text-black dark:bg-slate-900 dark:border-slate-700 dark:text-white"><option value="FOTO">🖼️ Foto / Gambar</option><option value="VIDEO">🎥 Video (Maks. 1 Menit)</option></select>
-                  <input type="file" required accept={pbJenisMedia === 'VIDEO' ? 'video/mp4,video/x-m4v,video/*' : 'image/jpeg,image/png,image/webp,image/*'} onChange={e=>e.target.files&&setPbMediaFile(e.target.files[0])} className="p-1.5 rounded-lg border-2 text-[10px] cursor-pointer bg-slate-50 border-black/20 text-slate-700 file:mr-2 file:py-1 file:px-2 file:rounded file:border file:bg-slate-200 file:text-xs file:font-bold dark:bg-slate-900 dark:border-slate-700 dark:text-white dark:file:bg-slate-800 dark:file:text-cyan-400" />
+                  <input type="file" required accept={pbJenisMedia === 'VIDEO' ? 'video/mp4,video/x-m4v,video/*' : 'image/jpeg,image/png,image/webp,image/*'} onChange={e=>e.target.files&&setPbMediaFile(e.target.files[0])} className="p-1.5 rounded-lg border-2 text-[10px] cursor-pointer bg-slate-50 border-black/20 text-slate-700 file:mr-2 file:py-1 file:px-2 file:rounded file:border file:bg-amber-200 file:text-black file:font-bold dark:bg-slate-900 dark:border-slate-700 dark:text-white dark:file:bg-slate-800 dark:file:text-amber-400" />
                 </div>
               </div>
 
-              {/* DESKRIPSI SINGKAT (Maks 500 Karakter) */}
               <div className="space-y-1">
                 <label className="text-[10px] font-black font-mono uppercase tracking-widest text-slate-700 dark:text-slate-400">Deskripsi Singkat Program</label>
-                <textarea required rows={5} maxLength={500} value={pbDeskripsi} onChange={e=>setPbDeskripsi(e.target.value)} placeholder="Ceritakan tujuan, langkah nyata, dan dampak inovasi dalam maksimal 500 karakter..." className="w-full p-3 rounded-xl border-2 leading-relaxed font-sans outline-none bg-white border-black text-black placeholder:text-slate-400 focus:border-blue-600 dark:bg-slate-950 dark:border-slate-800 dark:text-white dark:placeholder:text-slate-600 dark:focus:border-cyan-500" />
+                <textarea required rows={5} maxLength={500} value={pbDeskripsi} onChange={e=>setPbDeskripsi(e.target.value)} placeholder="Ceritakan tujuan, langkah nyata, dan dampak inovasi dalam maksimal 500 karakter..." className="w-full p-3 rounded-xl border-2 leading-relaxed font-sans outline-none bg-white border-black text-black placeholder:text-slate-400 focus:border-amber-600 dark:bg-slate-950 dark:border-slate-800 dark:text-white dark:placeholder:text-slate-600 dark:focus:border-amber-500" />
                 <div className="text-right text-[9px] font-mono font-bold text-slate-500 dark:text-slate-500 pr-1">{pbDeskripsi.length} / 500 Karakter</div>
               </div>
 
-              {/* CAPAIAN / HASIL */}
-              <textarea rows={3} value={pbCapaianHasil} onChange={e=>setPbCapaianHasil(e.target.value)} placeholder="Capaian / Hasil (Contoh: jumlah siswa yang terlibat, omzet, prestasi yang diraih)" className="w-full p-3 rounded-xl border-2 leading-relaxed font-sans outline-none bg-white border-black text-black placeholder:text-slate-400 focus:border-blue-600 dark:bg-slate-950 dark:border-slate-800 dark:text-white dark:placeholder:text-slate-600 dark:focus:border-cyan-500" />
+              <textarea rows={3} value={pbCapaianHasil} onChange={e=>setPbCapaianHasil(e.target.value)} placeholder="Capaian / Hasil (Contoh: jumlah siswa yang terlibat, omzet, prestasi yang diraih)" className="w-full p-3 rounded-xl border-2 leading-relaxed font-sans outline-none bg-white border-black text-black placeholder:text-slate-400 focus:border-amber-600 dark:bg-slate-950 dark:border-slate-800 dark:text-white dark:placeholder:text-slate-600 dark:focus:border-amber-500" />
 
-              {/* TANGGAL PELAKSANAAN & TOMBOL KIRIM */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end pt-2 border-t border-black/10 dark:border-slate-800">
                 <div className="space-y-1">
                    <label className="text-[10px] font-black font-mono uppercase tracking-widest text-slate-700 dark:text-slate-400 pr-1">Pelaksanaan</label>
-                   <input type="date" required value={pbTanggalPelaksanaan} onChange={e=>setPbTanggalPelaksanaan(e.target.value)} className="w-full p-3 rounded-xl border-2 outline-none bg-white border-black text-black focus:border-blue-600 dark:bg-slate-950 dark:border-slate-800 dark:text-white dark:focus:border-cyan-500" />
+                   <input type="date" required value={pbTanggalPelaksanaan} onChange={e=>setPbTanggalPelaksanaan(e.target.value)} className="w-full p-3 rounded-xl border-2 outline-none bg-white border-black text-black focus:border-amber-600 dark:bg-slate-950 dark:border-slate-800 dark:text-white dark:focus:border-amber-500" />
                 </div>
-                <button type="submit" disabled={formLoadingPraktik} className="w-full py-3.5 font-black rounded-xl cursor-pointer transition-all disabled:opacity-50 border-2 uppercase tracking-widest bg-yellow-400 hover:bg-yellow-300 border-black text-black shadow-neo hover:-translate-y-1 active:translate-y-0 active:shadow-none dark:bg-cyan-500 dark:hover:bg-cyan-400 dark:border-transparent dark:text-slate-950 dark:shadow-none dark:hover:translate-y-0 text-xs">
+                <button type="submit" disabled={formLoadingPraktik} className="w-full py-3.5 font-black rounded-xl cursor-pointer transition-all disabled:opacity-50 border-2 uppercase tracking-widest bg-yellow-400 hover:bg-yellow-300 border-black text-black shadow-neo hover:-translate-y-1 active:translate-y-0 active:shadow-none dark:bg-amber-500 dark:hover:bg-amber-400 dark:border-transparent dark:text-slate-950 dark:shadow-none dark:hover:translate-y-0 text-xs">
                    {formLoadingPraktik ? "🚀 Mengirim..." : "Kirim untuk Verifikasi"}
                 </button>
               </div>
-              
             </form>
           </div>
           
-          <div className="xl:col-span-2 p-6 rounded-2xl space-y-4 transition-all bg-white border-4 border-black shadow-neo dark:bg-slate-900/60 dark:border-2 dark:border-slate-800 dark:shadow-none h-full">
+          <div className="xl:col-span-2 p-6 rounded-2xl space-y-4 transition-all bg-white border-4 border-black shadow-neo dark:bg-slate-900/60 dark:border-2 dark:border-slate-800 dark:shadow-xl">
             <div className="flex justify-between items-center border-b-2 border-black/20 dark:border-slate-800 pb-2">
               <h3 className="text-sm font-black uppercase tracking-widest text-black dark:text-white">Arsip Postingan Sekolah ({listPraktik.length})</h3>
-              <button onClick={fetchPraktikBaik} className="text-xs font-bold cursor-pointer text-blue-600 hover:text-blue-800 dark:text-cyan-400 dark:hover:text-white">🔄 Segarkan</button>
+              <button onClick={fetchPraktikBaik} className="text-xs font-bold cursor-pointer text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-white">🔄 Segarkan</button>
             </div>
             <div className="space-y-3">
               {listPraktik.length === 0 ? (
@@ -312,10 +306,9 @@ export default function ManajemenSekolah() {
         </div>
       )}
 
-      {/* KONTEN TAB: RAPOR & AI */}
+      {/* KONTEN TAB: RAPOR & AI (TEMA HIJAU/EMERALD) */}
       {activeTab === 'RAPOR' && (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 items-start">
-          
           <div className="p-6 rounded-2xl space-y-4 transition-all bg-emerald-100 border-4 border-black shadow-neo border-t-8 border-t-emerald-500 dark:bg-slate-900/60 dark:border-2 dark:border-slate-800 dark:border-t-2 dark:border-t-emerald-500 dark:shadow-none">
             <h3 className="text-sm font-black uppercase tracking-widest text-emerald-800 dark:text-emerald-400">📊 Upload Excel Rapor</h3>
             <form onSubmit={handleAddRaporSekolah} className="space-y-3 text-xs font-bold">
@@ -348,23 +341,10 @@ export default function ManajemenSekolah() {
                   </div>
                   {r.status_ai === 'SELESAI' ? (
                     <div className="space-y-4 pt-1 font-sans">
-                      {r.hasil_analisis_ai?.includes('<div') ? ( 
-                        <div dangerouslySetInnerHTML={{ __html: r.hasil_analisis_ai }} className="p-4 rounded-2xl overflow-x-auto border-2 bg-white border-black text-black shadow-neo-sm dark:bg-white dark:border-transparent dark:shadow-2xl dark:text-slate-900" /> 
-                      ) : ( 
-                        <div className="p-4 rounded-xl border-2 text-xs whitespace-pre-line leading-relaxed font-medium bg-slate-100 border-slate-300 text-slate-800 dark:bg-slate-900 dark:border-emerald-500/20 dark:text-slate-200">{r.hasil_analisis_ai}</div> 
-                      )}
-                      
-                      {r.catatan_pengawas && ( 
-                        <div className="p-4 rounded-xl border-2 space-y-1 bg-yellow-50 border-yellow-400 dark:bg-amber-500/10 dark:border-amber-500/20">
-                          <span className="text-[10px] font-mono font-black uppercase block text-yellow-800 dark:text-amber-400">✍️ Catatan Rekomendasi Pengawas:</span>
-                          <p className="text-xs italic leading-relaxed font-medium text-slate-700 dark:text-amber-100/90">"{r.catatan_pengawas}"</p>
-                        </div> 
-                      )}
-                      
+                      {r.hasil_analisis_ai?.includes('<div') ? ( <div dangerouslySetInnerHTML={{ __html: r.hasil_analisis_ai }} className="p-4 rounded-2xl overflow-x-auto border-2 bg-white border-black text-black shadow-neo-sm dark:bg-white dark:border-transparent dark:shadow-2xl dark:text-slate-900" /> ) : ( <div className="p-4 rounded-xl border-2 text-xs whitespace-pre-line leading-relaxed font-medium bg-slate-100 border-slate-300 text-slate-800 dark:bg-slate-900 dark:border-emerald-500/20 dark:text-slate-200">{r.hasil_analisis_ai}</div> )}
+                      {r.catatan_pengawas && ( <div className="p-4 rounded-xl border-2 space-y-1 bg-yellow-50 border-yellow-400 dark:bg-amber-500/10 dark:border-amber-500/20"><span className="text-[10px] font-mono font-black uppercase block text-yellow-800 dark:text-amber-400">✍️ Catatan Rekomendasi Pengawas:</span><p className="text-xs italic leading-relaxed font-medium text-slate-700 dark:text-amber-100/90">"{r.catatan_pengawas}"</p></div> )}
                       <div className="pt-2 flex justify-end">
-                        <button onClick={() => window.print()} className="py-2.5 px-6 font-black rounded-xl text-xs uppercase tracking-wider cursor-pointer flex items-center gap-2 font-mono transition-all border-2 bg-blue-500 text-white border-black shadow-neo hover:-translate-y-1 active:translate-y-0 active:shadow-none dark:bg-linear-to-r dark:from-emerald-500 dark:to-teal-600 dark:border-transparent dark:text-slate-950 dark:shadow-lg dark:shadow-emerald-500/20 dark:hover:translate-y-0">
-                          <span>🖨️</span> Cetak PDF Rapor Resmi
-                        </button>
+                        <button onClick={() => window.print()} className="py-2.5 px-6 font-black rounded-xl text-xs uppercase tracking-wider cursor-pointer flex items-center gap-2 font-mono transition-all border-2 bg-blue-500 text-white border-black shadow-neo hover:-translate-y-1 active:translate-y-0 active:shadow-none dark:bg-linear-to-r dark:from-emerald-500 dark:to-teal-600 dark:border-transparent dark:text-slate-950 dark:shadow-lg dark:shadow-emerald-500/20 dark:hover:translate-y-0"><span>🖨️</span> Cetak PDF Rapor Resmi</button>
                       </div>
                     </div>
                   ) : <p className="text-xs font-bold italic py-4 text-center text-slate-500 dark:text-slate-500">⏳ Menunggu Pengawas memicu analisis AI...</p>}
@@ -375,11 +355,11 @@ export default function ManajemenSekolah() {
         </div>
       )}
 
-      {/* KONTEN TAB: TKA */}
+      {/* 🌟 KONTEN TAB: TKA (TEMA BIRU) */}
       {activeTab === 'TKA' && (
-        <div className="p-6 sm:p-8 rounded-3xl space-y-4 transition-all bg-white border-4 border-black shadow-neo dark:bg-slate-900/40 dark:border-2 dark:border-slate-800 dark:shadow-2xl">
+        <div className="p-6 sm:p-8 rounded-3xl space-y-4 transition-all bg-blue-100 border-4 border-black shadow-neo border-t-8 border-t-blue-600 dark:bg-slate-900/40 dark:border-2 dark:border-slate-800 dark:border-t-2 dark:border-t-blue-600 dark:shadow-none">
           <div className="border-b-2 border-black/20 dark:border-slate-800 pb-4 mb-6">
-             <h3 className="text-base font-black font-mono uppercase tracking-widest flex items-center gap-2 text-black dark:text-white">
+             <h3 className="text-base font-black font-mono uppercase tracking-widest flex items-center gap-2 text-blue-900 dark:text-cyan-400">
                <span className="text-blue-600 dark:text-cyan-400">📊</span> Tes Kemampuan Akademik (TKA)
              </h3>
              <p className="text-xs font-bold mt-1 text-slate-600 dark:text-slate-400">

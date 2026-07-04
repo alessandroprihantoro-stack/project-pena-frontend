@@ -3,8 +3,9 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import Layout from "./components/Layout";
 
-// Import Halaman Admin
+// Import Halaman Admin & Publik
 import Login from "./pages/Login";
+import EtalasePublik from "./pages/publik/EtalasePublik"; // 🌟 MODUL BARU: Gerbang Masyarakat Umum
 import Dashboard from "./pages/admin/Dashboard";
 import PraktikBaik from "./pages/admin/PraktikBaik";
 import KelolaPengawas from "./pages/admin/KelolaPengawas";
@@ -58,6 +59,9 @@ export default function App() {
           {/* JANGKAR UTAMA: Deteksi Role & Otomatis Redirection */}
           <Route path="/" element={<DetektorAwal />} />
           <Route path="/login" element={<Login />} />
+          
+          {/* 🌟 GERBANG PUBLIK (TANPA LOGIN): Papan Peringkat & Apresiasi Karya */}
+          <Route path="/publik" element={<EtalasePublik />} />
 
           {/* ================= ZONA GERBANG ADMIN ================= */}
           <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
