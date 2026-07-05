@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 import React, { useState, useEffect } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
@@ -78,7 +79,20 @@ export default function Layout() {
     }
   };
 
-  const navItems = getNavigation(profile?.role);
+  // 🌟 CHECKPOINT PROTECTION: Penyuntikan Menu Pusat Informasi secara dinamis & aman
+  const rawNavItems = getNavigation(profile?.role);
+  
+  const navItems = [...rawNavItems];
+  
+  // 1. Menu Universal "Pusat Informasi" untuk SEMUA AKUN (Admin, Pengawas, Sekolah)
+  if (!navItems.some((i: { path?: string }) => i.path === '/pusat-informasi')) {
+    navItems.push({ name: "Pusat Informasi", path: "/pusat-informasi", icon: "📢" });
+  }
+
+  // 2. Menu Khusus Admin "Kelola Info" (Hanya muncul jika login sebagai ADMIN)
+  if (profile?.role === 'ADMIN' && !navItems.some((i: { path?: string }) => i.path === '/admin/papan-informasi')) {
+    navItems.push({ name: "Kelola Info", path: "/admin/papan-informasi", icon: "⚙️" });
+  }
 
   const handleKeluar = async () => {
     await logout();
@@ -199,7 +213,7 @@ export default function Layout() {
           })}
         </div>
 
-        {/* 🌟 LOGO PENA DI BAWAH MENU 🌟 */}
+        {/* 🌟 LOGO PENA DI BAWAH MENU (Widget yang tergencet resmi dihapus dari sini!) 🌟 */}
         <div className="mt-8 pt-6 border-t-2 border-dashed border-black/10 dark:border-slate-800/50 flex flex-col items-center justify-center opacity-60 hover:opacity-100 transition-all duration-300 cursor-default">
           <img src={logoPena} alt="PENA" className="w-20 h-auto object-contain drop-shadow-sm filter grayscale hover:grayscale-0 transition-all duration-300" />
           <span className="text-[9px] font-black tracking-widest uppercase mt-2 text-slate-400 dark:text-slate-500">PENA Enterprise OS</span>

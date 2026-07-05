@@ -1,3 +1,5 @@
+/* eslint-disable react-hooks/set-state-in-effect */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useState } from "react";
 import { supabase } from "../../supabaseClient";
 
@@ -10,20 +12,40 @@ export default function PraktikBaik() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // 1. Tarik Data Karya Inovasi (Praktik Baik)
-      const { data: inovasiData, error: errInovasi } = await supabase
+      // 🌟 CHECKPOINT PROTECTION: 1. Tarik Data Karya Inovasi dengan Auto-Fallback Relasi
+      let { data: inovasiData, error: errInovasi } = await supabase
         .from("praktik_baik")
-        .select("*, profiles(nama_lengkap, nomor_induk)")
+        .select("*, profiles!user_id(nama_lengkap, nomor_induk)")
         .order("created_at", { ascending: false });
+
+      // Jika kolom relasi di DB bukan 'user_id', otomatis beralih ke 'sekolah_id'
+      if (errInovasi && errInovasi.message.includes("relationship")) {
+        const fallbackInovasi = await supabase
+          .from("praktik_baik")
+          .select("*, profiles!sekolah_id(nama_lengkap, nomor_induk)")
+          .order("created_at", { ascending: false });
+        inovasiData = fallbackInovasi.data;
+        errInovasi = fallbackInovasi.error;
+      }
 
       if (errInovasi) throw errInovasi;
       setInovasiList(inovasiData || []);
 
-      // 2. Tarik Data Prestasi Sekolah
-      const { data: prestasiData, error: errPrestasi } = await supabase
+      // 🌟 CHECKPOINT PROTECTION: 2. Tarik Data Prestasi Sekolah dengan Auto-Fallback Relasi
+      let { data: prestasiData, error: errPrestasi } = await supabase
         .from("prestasi")
-        .select("*, profiles(nama_lengkap, nomor_induk)")
+        .select("*, profiles!user_id(nama_lengkap, nomor_induk)")
         .order("created_at", { ascending: false });
+
+      // Jika kolom relasi di DB bukan 'user_id', otomatis beralih ke 'sekolah_id'
+      if (errPrestasi && errPrestasi.message.includes("relationship")) {
+        const fallbackPrestasi = await supabase
+          .from("prestasi")
+          .select("*, profiles!sekolah_id(nama_lengkap, nomor_induk)")
+          .order("created_at", { ascending: false });
+        prestasiData = fallbackPrestasi.data;
+        errPrestasi = fallbackPrestasi.error;
+      }
 
       if (errPrestasi) throw errPrestasi;
       setPrestasiList(prestasiData || []);

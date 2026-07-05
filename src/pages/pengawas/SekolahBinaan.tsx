@@ -9,7 +9,7 @@ import * as XLSX from 'xlsx';
 import logoPena from "../../assets/logo_pena.png";
 import bannerPena from "../../assets/banner_pena.png";
 
-// 🌟 IMPOR MODAL ISOLASI AI (Akan kita buat di Langkah 2)
+// 🌟 IMPOR MODAL ISOLASI AI (Akan kita periksa/buat di Langkah 2)
 import ModalAnalisisRapor from './components/ModalAnalisisRapor';
 
 interface SekolahBinaan { 
@@ -38,7 +38,8 @@ interface RaporAjuan {
 }
 
 export default function SekolahBinaanDanRapor() {
-  const { profile } = useAuth();
+  // 🛡️ CHECKPOINT PROTECTION: Menambahkan 'user' agar tidak melempar ReferenceError
+  const { profile, user } = useAuth();
   
   const [listSekolah, setListSekolah] = useState<SekolahBinaan[]>([]);
   const [listRapor, setListRapor] = useState<RaporAjuan[]>([]);
@@ -97,10 +98,21 @@ export default function SekolahBinaanDanRapor() {
     fetchRaporAjuan(); 
   }, [profile]);
 
-  // 💥 PERBAIKAN MUTLAK: IMMUNITY BYPASS "users_email_partial_key" 💥
+  // 💥 CHECKPOINT PROTECTION: ANTI FALSE-ALARM & SAFE REGISTRATION GUARD 💥
   const handleTambahSekolahBinaan = async (e: React.FormEvent) => {
     e.preventDefault(); 
-    if (!profile?.id) return;
+    
+    // 1. Dual-Layer ID Fallback Pengawas
+    let pengawasId = profile?.id || user?.id;
+    if (!pengawasId) {
+      const { data: { session } } = await supabase.auth.getSession();
+      pengawasId = session?.user?.id;
+    }
+
+    if (!pengawasId) {
+      alert("⚠️ ERROR SISTEM: Sesi Pengawas tidak terbaca. Silakan refresh (Ctrl + F5) atau login ulang.");
+      return;
+    }
 
     const npsnBersih = sbNpsn.trim(); 
     const namaBersih = sbNama.trim();
@@ -119,35 +131,94 @@ export default function SekolahBinaanDanRapor() {
       const passwordSekolah = npsnBersih;
       let targetUserId = null;
 
-      const { data: existingProf } = await supabase.from('profiles').select('id').eq('nomor_induk', npsnBersih).maybeSingle();
+      // 2. Cek eksistensi awal di tabel profiles dan sekolah
+      const { data: existingProf } = await supabase
+        .from('profiles')
+        .select('id')
+        .or(`nomor_induk.eq.${npsnBersih},email.eq.${emailSekolah}`)
+        .maybeSingle();
       
       if (existingProf) {
           targetUserId = existingProf.id;
       } else {
-          const { data: { session: currentSession } } = await supabase.auth.getSession();
-          const { data: authData, error: authError } = await supabase.auth.signUp({ email: emailSekolah, password: passwordSekolah });
-          
-          if (authError) {
-              const { data: loginData } = await supabase.auth.signInWithPassword({ email: emailSekolah, password: passwordSekolah });
-              targetUserId = loginData?.user?.id;
-          } else {
-              targetUserId = authData?.user?.id;
-          }
+          const { data: existingSekolah } = await supabase
+            .from('sekolah')
+            .select('id, user_id')
+            .eq('npsn', npsnBersih)
+            .maybeSingle();
 
-          if (currentSession) {
-            await supabase.auth.setSession({ access_token: currentSession.access_token, refresh_token: currentSession.refresh_token });
+          if (existingSekolah) {
+            targetUserId = existingSekolah.user_id || existingSekolah.id;
+          } else {
+            // 3. Pengamanan Sesi: Simpan sesi pengawas sebelum proses Auth
+            const { data: { session: currentSession } } = await supabase.auth.getSession();
+            
+            const { data: authData, error: authError } = await supabase.auth.signUp({ 
+              email: emailSekolah, 
+              password: passwordSekolah,
+              options: {
+                data: {
+                  role: 'SEKOLAH',
+                  nama_lengkap: namaBersih,
+                  nomor_induk: npsnBersih
+                }
+              }
+            });
+            
+            // 4. Wajib: Langsung kembalikan sesi Pengawas terlebih dahulu agar tidak tergeser!
+            if (currentSession) {
+              await supabase.auth.setSession({ 
+                access_token: currentSession.access_token, 
+                refresh_token: currentSession.refresh_token 
+              });
+            }
+
+            // 5. Analisis Error Presisi (Anti False-Alarm)
+            if (authError) {
+              const errorMsg = authError.message.toLowerCase();
+              // HANYA lakukan fallback login jika errornya memang karena email sudah ada (Error 422 / Already Registered)
+              if (errorMsg.includes('already registered') || errorMsg.includes('duplicate') || authError.status === 422) {
+                const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({ 
+                  email: emailSekolah, 
+                  password: passwordSekolah 
+                });
+                if (loginError) {
+                  throw new Error(`Email (${emailSekolah}) sudah terdaftar di sistem Auth dengan sandi berbeda.`);
+                }
+                targetUserId = loginData?.user?.id;
+                
+                // Kembalikan lagi sesi pengawas setelah fallback login
+                if (currentSession) {
+                  await supabase.auth.setSession({ 
+                    access_token: currentSession.access_token, 
+                    refresh_token: currentSession.refresh_token 
+                  });
+                }
+              } else {
+                // Jika Error 500 atau error lainnya, tampilkan pesan ASLI dari Supabase agar transparan!
+                throw new Error(`Supabase Auth Error (${authError.status || '500'}): ${authError.message}`);
+              }
+            } else if (!authData?.user?.id) {
+              throw new Error("Supabase tidak mengembalikan ID User. Pastikan layanan Auth Supabase aktif.");
+            } else {
+              targetUserId = authData.user.id;
+            }
           }
       }
 
-      if (!targetUserId) throw new Error("Gagal sinkronisasi ID Autentikasi.");
+      if (!targetUserId) {
+        throw new Error("Gagal mendapatkan ID Autentikasi untuk akun sekolah.");
+      }
 
+      // 6. Upsert tabel profiles (Aman tanpa merusak RLS)
       await supabase.from('profiles').upsert(
          { id: targetUserId, role: 'SEKOLAH', nama_lengkap: namaBersih, nomor_induk: npsnBersih, email: emailSekolah },
          { onConflict: 'id' }
       );
       
+      // 7. Upsert tabel sekolah
       const { error: errSekolah } = await supabase.from('sekolah').upsert(
-         { id: targetUserId, user_id: targetUserId, npsn: npsnBersih, nama_sekolah: namaBersih, pengawas_id: profile.id },
+         { id: targetUserId, user_id: targetUserId, npsn: npsnBersih, nama_sekolah: namaBersih, pengawas_id: pengawasId },
          { onConflict: 'id' }
       );
       
@@ -155,14 +226,26 @@ export default function SekolahBinaanDanRapor() {
          throw new Error("Database Sekolah: " + errSekolah.message);
       }
 
-      const { data: cekBinaan } = await supabase.from('sekolah_binaan').select('id').eq('sekolah_id', targetUserId).eq('pengawas_id', profile.id).maybeSingle();
+      // 8. Relasikan ke tabel sekolah_binaan
+      const { data: cekBinaan } = await supabase
+        .from('sekolah_binaan')
+        .select('id')
+        .eq('sekolah_id', targetUserId)
+        .eq('pengawas_id', pengawasId)
+        .maybeSingle();
+
       if (!cekBinaan) {
-         await supabase.from('sekolah_binaan').insert([{ pengawas_id: profile.id, sekolah_id: targetUserId, npsn: npsnBersih, nama_sekolah: namaBersih }]);
+         await supabase.from('sekolah_binaan').insert([
+           { pengawas_id: pengawasId, sekolah_id: targetUserId, npsn: npsnBersih, nama_sekolah: namaBersih }
+         ]);
       }
       
       setSbNpsn(''); 
       setSbNama('');
-      fetchSekolahBinaan();
+      if (typeof fetchSekolahBinaan === 'function') {
+        fetchSekolahBinaan();
+      }
+      
       alert(` ✅ BERHASIL! Satuan Pendidikan didaftarkan.\n\nNPSN: ${npsnBersih}\nSandi: ${passwordSekolah}`);
 
     } catch (err: any) { 

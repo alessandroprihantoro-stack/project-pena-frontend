@@ -10,6 +10,7 @@ import Dashboard from "./pages/admin/Dashboard";
 import PraktikBaik from "./pages/admin/PraktikBaik";
 import KelolaPengawas from "./pages/admin/KelolaPengawas";
 import KelolaSekolah from "./pages/admin/KelolaSekolah";
+import KelolaPapanInformasi from "./pages/admin/KelolaPapanInformasi";
 
 // Import Jantung Dasbor Utama
 import DashboardPengawas from "./pages/pengawas/DashboardPengawas";
@@ -21,6 +22,9 @@ import ManajemenSekolah from "./pages/sekolah/ManajemenSekolah";
 // Ruang Kelas & Log Jurnal Pengawas
 import SekolahBinaan from "./pages/pengawas/SekolahBinaan";
 import LogJurnalDiri from "./pages/pengawas/LogJurnalDiri";
+
+// 🌟 IMPORT MODUL VIEWER: Untuk Ditampilkan Luas di Dasbor Utama
+import PapanInformasiViewer from "./components/PapanInformasiViewer";
 
 // Komponen Loading Indikator Sederhana untuk mencegah Blank Screen saat fetch data auth
 const LoadingScreen = () => (
@@ -63,6 +67,14 @@ export default function App() {
           {/* 🌟 GERBANG PUBLIK (TANPA LOGIN): Papan Peringkat & Apresiasi Karya */}
           <Route path="/publik" element={<EtalasePublik />} />
 
+          {/* ================= ZONA UNIVERSAL (SEMUA AKUN TERVERIFIKASI) ================= */}
+          {/* 🌟 CHECKPOINT PROTECTION: Rute Papan Informasi Luas untuk Admin, Pengawas, & Sekolah */}
+          <Route element={<ProtectedRoute allowedRoles={['ADMIN', 'PENGAWAS', 'SEKOLAH']} />}>
+            <Route element={<Layout />}>
+              <Route path="/pusat-informasi" element={<PapanInformasiViewer />} />
+            </Route>
+          </Route>
+
           {/* ================= ZONA GERBANG ADMIN ================= */}
           <Route element={<ProtectedRoute allowedRoles={['ADMIN']} />}>
             <Route element={<Layout />}>
@@ -70,6 +82,7 @@ export default function App() {
               <Route path="/admin/praktik-baik" element={<PraktikBaik />} />
               <Route path="/admin/pengawas" element={<KelolaPengawas />} />
               <Route path="/admin/sekolah" element={<KelolaSekolah />} />
+              <Route path="/admin/papan-informasi" element={<KelolaPapanInformasi />} />
             </Route>
           </Route>
 
