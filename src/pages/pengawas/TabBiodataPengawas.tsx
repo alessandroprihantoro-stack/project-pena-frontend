@@ -10,7 +10,7 @@ interface TabBiodataPengawasProps {
 
 export default function TabBiodataPengawas({ profile }: TabBiodataPengawasProps) {
 
-  // 🌟 STATE FORMULIR KOSONG (Akan disinkronisasi oleh useEffect)
+  // 🌟 STATE FORMULIR KOSONG
   const [formData, setFormData] = useState({
     nama_lengkap: '',
     nip_resmi: '',
@@ -32,36 +32,58 @@ export default function TabBiodataPengawas({ profile }: TabBiodataPengawasProps)
     link_drive_berkas: ''
   });
 
-  // 🌟 SINKRONISASI DATA (Mencegah data hilang saat tab dibuka ulang)
-  useEffect(() => {
-    if (profile) {
-      setFormData({
-        nama_lengkap: profile.nama_lengkap || '',
-        nip_resmi: profile.nip_resmi || profile.nomor_induk || '',
-        tempat_tgl_lahir: profile.tempat_tgl_lahir || '',
-        golongan: profile.golongan || '',
-        jabatan: profile.jabatan || 'Pengawas Sekolah Ahli Muda',
-        tmt_cpns: profile.tmt_cpns || '',
-        tmt_pns: profile.tmt_pns || '',
-        tmt_pengawas: profile.tmt_pengawas || '',
-        instansi: profile.instansi || '',
-        alamat_rumah: profile.alamat_rumah || '',
-        npwp: profile.npwp || '',
-        karpeg: profile.karpeg || '',
-        nuptk: profile.nuptk || '',
-        nrg: profile.nrg || '',
-        serdik_guru: profile.serdik_guru || '',
-        nik: profile.nik || '',
-        rekening: profile.rekening || '',
-        link_drive_berkas: profile.link_drive_berkas || ''
-      });
-    }
-  }, [profile]);
-
   const [isSaving, setIsSaving] = useState(false);
+  const [isFetching, setIsFetching] = useState(true);
   const [showModalCetak, setShowModalCetak] = useState(false);
   const [tempatCetak, setTempatCetak] = useState('Sukoharjo');
   const [tglCetak, setTglCetak] = useState(new Date().toISOString().split('T')[0]);
+
+  // 🌟 MESIN PENARIK DATA SEGAR DARI SUPABASE (Anti-Ghost Save)
+  const fetchFreshData = async () => {
+    if (!profile?.id) return;
+    setIsFetching(true);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', profile.id)
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        setFormData({
+          nama_lengkap: data.nama_lengkap || '',
+          nip_resmi: data.nip_resmi || data.nomor_induk || '',
+          tempat_tgl_lahir: data.tempat_tgl_lahir || '',
+          golongan: data.golongan || '',
+          jabatan: data.jabatan || 'Pengawas Sekolah Ahli Muda',
+          tmt_cpns: data.tmt_cpns || '',
+          tmt_pns: data.tmt_pns || '',
+          tmt_pengawas: data.tmt_pengawas || '',
+          instansi: data.instansi || '',
+          alamat_rumah: data.alamat_rumah || '',
+          npwp: data.npwp || '',
+          karpeg: data.karpeg || '',
+          nuptk: data.nuptk || '',
+          nrg: data.nrg || '',
+          serdik_guru: data.serdik_guru || '',
+          nik: data.nik || '',
+          rekening: data.rekening || '',
+          link_drive_berkas: data.link_drive_berkas || ''
+        });
+      }
+    } catch (err: any) {
+      console.error("Gagal menarik data segar biodata:", err.message);
+    } finally {
+      setIsFetching(false);
+    }
+  };
+
+  // Panggil Penarik Data Segar setiap kali tab ini dimuat (berdasarkan ID user)
+  useEffect(() => {
+    fetchFreshData();
+  }, [profile?.id]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -80,6 +102,9 @@ export default function TabBiodataPengawas({ profile }: TabBiodataPengawasProps)
 
       if (error) throw error;
       alert("✅ Biodata dan Tautan Arsip Berkas berhasil disimpan permanen!");
+      
+      // 🌟 REFRESH DATA SETELAH SIMPAN UNTUK MEMASTIKAN SINKRONISASI
+      await fetchFreshData(); 
     } catch (err: any) {
       alert("❌ Gagal menyimpan data!\n\nPesan Sistem: " + err.message);
     } finally {
@@ -93,7 +118,7 @@ export default function TabBiodataPengawas({ profile }: TabBiodataPengawasProps)
     return new Date(dateString).toLocaleDateString('id-ID', options);
   };
 
-  // 🌟 MESIN CETAK PRESISI (Disusun ulang 1 s.d 17)
+  // MESIN CETAK PRESISI
   const handleEksekusiCetak = () => {
     const w = window.open('', '_blank');
     if (!w) {
@@ -193,6 +218,13 @@ export default function TabBiodataPengawas({ profile }: TabBiodataPengawasProps)
   return (
     <div className="relative bg-slate-900/80 border-2 border-cyan-500/30 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-8 animate-fade-in text-slate-100">
       
+      {/* 🌟 OVERLAY LOADING PENARIK DATA SEGAR */}
+      {isFetching && (
+        <div className="absolute inset-0 z-10 bg-slate-900/50 backdrop-blur-sm rounded-3xl flex items-center justify-center font-mono font-black text-cyan-400 animate-pulse text-sm">
+          Menyinkronkan data profil dari satelit...
+        </div>
+      )}
+
       {showModalCetak && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
           <div className="bg-[#061030] border-2 border-cyan-500/40 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-[0_0_40px_rgba(6,182,212,0.2)] space-y-6">
@@ -223,7 +255,7 @@ export default function TabBiodataPengawas({ profile }: TabBiodataPengawasProps)
         </div>
       </div>
 
-      <form onSubmit={handleSimpanBiodata} className="space-y-6 text-xs">
+      <form onSubmit={handleSimpanBiodata} className="space-y-6 text-xs relative z-20">
         
         {/* SECTION A: IDENTITAS */}
         <div className="space-y-4">
@@ -263,7 +295,7 @@ export default function TabBiodataPengawas({ profile }: TabBiodataPengawasProps)
           </div>
         </div>
 
-        {/* SECTION C: LEGALITAS (Sudah direvisi, tanpa NPA PGRI & Serdik Pengawas) */}
+        {/* SECTION C: LEGALITAS */}
         <div className="space-y-4 pt-2">
           <h4 className="text-xs font-mono font-bold text-amber-400 uppercase tracking-wider border-l-4 border-amber-400 pl-2">C. Registrasi & Dokumen Kepegawaian</h4>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 font-mono">
@@ -287,9 +319,9 @@ export default function TabBiodataPengawas({ profile }: TabBiodataPengawasProps)
           </div>
         </div>
 
-        {/* TOMBOL SIMPAN KE SUPABASE */}
+        {/* TOMBOL SIMPAN */}
         <div className="pt-4 flex justify-end">
-          <button type="submit" disabled={isSaving} className="w-full sm:w-auto px-8 py-4 bg-linear-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black font-mono rounded-xl uppercase tracking-widest shadow-lg transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50">
+          <button type="submit" disabled={isSaving || isFetching} className="w-full sm:w-auto px-8 py-4 bg-linear-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-black font-mono rounded-xl uppercase tracking-widest shadow-lg transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50">
             {isSaving ? "⏳ MENYIMPAN..." : "<span>💾</span> SIMPAN PEMUTAKHIRAN BIODATA"}
           </button>
         </div>

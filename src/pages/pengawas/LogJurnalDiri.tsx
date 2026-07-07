@@ -35,11 +35,68 @@ export default function LogJurnalDiri() {
   const [filterTglMulai, setFilterTglMulai] = useState('');
   const [filterTglSelesai, setFilterTglSelesai] = useState('');
 
-  // HELPER UI: Mengubah format tanggal '2026-07-03' menjadi 'Jumat, 3 Juli 2026'
+  // HELPER UI: Mengubah format tanggal
   const formatHariTanggal = (dateString?: string) => {
     if (!dateString) return '-';
     const options: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' };
     return new Date(dateString).toLocaleDateString('id-ID', options);
+  };
+
+  // 🌟 MESIN KOMPRESI GAMBAR NATIVE (Tanpa Library Tambahan)
+  // Akan memeras gambar yang terlalu besar (misal 5MB menjadi < 300KB) dengan kualitas 70%
+  const compressImage = (file: File): Promise<File> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 1280; // Resolusi aman untuk dokumen
+          const MAX_HEIGHT = 1280;
+          let width = img.width;
+          let height = img.height;
+
+          // Kalkulasi rasio aspek agar tidak gepeng
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+
+          // Konversi kembali menjadi file JPEG terkompresi
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                const newFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpeg", {
+                  type: 'image/jpeg',
+                  lastModified: Date.now(),
+                });
+                resolve(newFile);
+              } else {
+                resolve(file); // Fallback jika gagal kompresi
+              }
+            },
+            'image/jpeg',
+            0.7 // Kualitas 70% (Sangat optimal untuk penghematan ruang)
+          );
+        };
+        img.onerror = () => resolve(file); // Fallback
+      };
+      reader.onerror = () => resolve(file); // Fallback
+    });
   };
 
   const fetchJurnal = async () => {
@@ -74,14 +131,20 @@ export default function LogJurnalDiri() {
       let publicUrl = '';
 
       if (jFileBukti) {
-        const fileExt = jFileBukti.name.split('.').pop();
+        // 🌟 EKSEKUSI KOMPRESI GAMBAR SEBELUM UPLOAD
+        let fileToUpload = jFileBukti;
+        if (jFileBukti.type.startsWith('image/')) {
+          fileToUpload = await compressImage(jFileBukti);
+          console.log(`PENA Compressor: Memeras ukuran dari ${(jFileBukti.size / 1024).toFixed(1)} KB menjadi ${(fileToUpload.size / 1024).toFixed(1)} KB`);
+        }
+
         const randomString = Math.random().toString(36).substring(2, 8);
-        const fileName = `${profile.id}-${Date.now()}-${randomString}.${fileExt}`;
+        const fileName = `${profile.id}-${Date.now()}-${randomString}.jpeg`;
         const filePath = `jurnal/${fileName}`;
 
         const { error: uploadError } = await supabase.storage
           .from('jurnal_foto')
-          .upload(filePath, jFileBukti, {
+          .upload(filePath, fileToUpload, { // Menggunakan file hasil kompresi
             cacheControl: '3600',
             upsert: true 
           });
@@ -138,7 +201,6 @@ export default function LogJurnalDiri() {
     }
   };
 
-  // CHECKPOINT PROTECTION: LOGIKA CETAK DENGAN PRESISI KOLOM PERSENTASE
   const handleCetakPDFJurnal = () => {
     const jurnalSiapCetak = listJurnal.filter((item) => {
       if (!filterTglMulai && !filterTglSelesai) return true;
@@ -195,7 +257,6 @@ export default function LogJurnalDiri() {
       const namaHari = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'][tglObj.getDay()];
       const tglFormat = `${namaHari}, ${tglObj.getDate()} ${bulanIndo[tglObj.getMonth()]} ${tglObj.getFullYear()}`;
 
-      // 🌟 PERBAIKAN LINTER 1: Mengganti break-words menjadi wrap-break-word
       barisTabel += `
         <tr class="border-b border-black">
           <td class="p-2 text-center align-top border-r border-black font-semibold">${idx+1}</td>
@@ -430,13 +491,11 @@ export default function LogJurnalDiri() {
                 📭 Belum ada rekaman log jurnal pendampingan.
               </p>
             ) : (
-              // 🌟 PERBAIKAN LINTER 2: Mengganti max-h-[600px] menjadi max-h-150
               <div className="overflow-x-auto max-h-150 rounded-2xl border border-slate-800 bg-slate-950/80 shadow-2xl custom-scrollbar">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-slate-800 bg-[#061030] text-[11px] font-mono font-black uppercase tracking-wider text-cyan-400 sticky top-0 z-10 shadow-sm">
                       <th className="py-3 px-3 text-center w-12 border-r border-slate-800/80">NO</th>
-                      {/* 🌟 PERBAIKAN LINTER 3-6: Mengganti min-w-[...px] menjadi min-w kanonikal */}
                       <th className="py-3 px-3 border-r border-slate-800/80 min-w-32.5">Hari, Tanggal</th>
                       <th className="py-3 px-3 border-r border-slate-800/80 min-w-30">Tempat</th>
                       <th className="py-3 px-3 border-r border-slate-800/80 min-w-40">Kegiatan</th>
