@@ -23,16 +23,28 @@ export default function LogJurnalDiri() {
   const [listJurnal, setListJurnal] = useState<JurnalItem[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // STATE FORM INPUT JURNAL
   const [jTanggal, setJTanggal] = useState(new Date().toISOString().split('T')[0]);
   const [jTempat, setJTempat] = useState('CABDISDIK');
   const [jKegiatan, setJKegiatan] = useState('');
   const [jHasil, setJHasil] = useState('');
   const [jFileBukti, setJFileBukti] = useState<File | null>(null);
 
+  // STATE MODAL & FILTER TANGGAL CETAK PDF
+  const [showModalCetak, setShowModalCetak] = useState(false);
+  const [filterTglMulai, setFilterTglMulai] = useState('');
+  const [filterTglSelesai, setFilterTglSelesai] = useState('');
+
+  // HELPER UI: Mengubah format tanggal '2026-07-03' menjadi 'Jumat, 3 Juli 2026'
+  const formatHariTanggal = (dateString?: string) => {
+    if (!dateString) return '-';
+    const options: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' };
+    return new Date(dateString).toLocaleDateString('id-ID', options);
+  };
+
   const fetchJurnal = async () => {
     if (!profile?.id) return;
     
-    // PERBAIKAN 1: Pastikan mengambil data dari TABEL jurnal_pengawas
     const { data } = await supabase
       .from('jurnal_pengawas')
       .select('*')
@@ -67,7 +79,6 @@ export default function LogJurnalDiri() {
         const fileName = `${profile.id}-${Date.now()}-${randomString}.${fileExt}`;
         const filePath = `jurnal/${fileName}`;
 
-        // Upload ke BUCKET jurnal_foto
         const { error: uploadError } = await supabase.storage
           .from('jurnal_foto')
           .upload(filePath, jFileBukti, {
@@ -80,7 +91,6 @@ export default function LogJurnalDiri() {
           throw new Error("Gagal mengunggah foto ke server. Pastikan format gambar didukung.");
         }
 
-        // PERBAIKAN 2: Mengambil URL juga dari BUCKET jurnal_foto
         const { data: publicUrlData } = supabase.storage
           .from('jurnal_foto')
           .getPublicUrl(filePath);
@@ -88,7 +98,6 @@ export default function LogJurnalDiri() {
         publicUrl = publicUrlData.publicUrl;
       }
 
-      // Insert data ke TABEL jurnal_pengawas
       const { error } = await supabase.from('jurnal_pengawas').insert({
         user_id: profile.id,
         hari_tanggal: jTanggal,
@@ -129,7 +138,23 @@ export default function LogJurnalDiri() {
     }
   };
 
+  // CHECKPOINT PROTECTION: LOGIKA CETAK DENGAN PRESISI KOLOM PERSENTASE
   const handleCetakPDFJurnal = () => {
+    const jurnalSiapCetak = listJurnal.filter((item) => {
+      if (!filterTglMulai && !filterTglSelesai) return true;
+      
+      const tglItem = new Date(item.tanggal).setHours(0, 0, 0, 0);
+      const mulai = filterTglMulai ? new Date(filterTglMulai).setHours(0, 0, 0, 0) : -Infinity;
+      const selesai = filterTglSelesai ? new Date(filterTglSelesai).setHours(23, 59, 59, 999) : Infinity;
+      
+      return tglItem >= mulai && tglItem <= selesai;
+    });
+
+    if (jurnalSiapCetak.length === 0) {
+      alert("❌ Tidak ada catatan jurnal pada rentang tanggal yang dipilih!");
+      return;
+    }
+
     const w = window.open('', '_blank'); 
     if (!w) return;
 
@@ -138,6 +163,13 @@ export default function LogJurnalDiri() {
     const namaBulan = bulanIndo[d.getMonth()];
     const tahun = d.getFullYear();
 
+    let judulPeriode = `BULAN : ${namaBulan.toUpperCase()} ${tahun}`;
+    if (filterTglMulai || filterTglSelesai) {
+      const tglM = filterTglMulai ? formatHariTanggal(filterTglMulai) : 'Awal Jurnal';
+      const tglS = filterTglSelesai ? formatHariTanggal(filterTglSelesai) : 'Sekarang';
+      judulPeriode = `PERIODE : ${tglM.toUpperCase()} s.d. ${tglS.toUpperCase()}`;
+    }
+
     const p = profile as any; 
     const nip = p?.nip_resmi || p?.nomor_induk || '-';
     const golongan = p?.golongan || '-';
@@ -145,15 +177,15 @@ export default function LogJurnalDiri() {
     const instansi = p?.instansi || 'Cabang Dinas Pendidikan Wilayah VI';
 
     let barisTabel = '';
-    listJurnal.forEach((j: JurnalItem, idx: number) => {
+    jurnalSiapCetak.forEach((j: JurnalItem, idx: number) => {
       
       let selDokumentasi = '-';
       if (j.bukti_dukung) {
         const link = j.bukti_dukung.toLowerCase();
         if (link.match(/\.(jpeg|jpg|gif|png|webp)$/) != null || link.includes('storage/v1/object/public')) {
-          selDokumentasi = `<img src="${j.bukti_dukung}" class="w-full h-auto max-h-32 object-cover border border-slate-300 rounded shadow-sm" alt="Bukti" />`;
+          selDokumentasi = `<img src="${j.bukti_dukung}" class="w-full h-auto max-h-24 object-cover border border-slate-300 rounded shadow-sm mx-auto" alt="Bukti" />`;
         } else if (link.includes("drive.google.com")) {
-           selDokumentasi = `<div class="bg-blue-50 border border-blue-200 p-2 rounded text-center"><a href="${j.bukti_dukung}" target="_blank" class="text-blue-700 text-[10px] font-bold underline block mb-1">🔗 Buka Arsip Drive</a><span class="text-[9px] text-slate-500 italic">Preview tidak didukung</span></div>`;
+           selDokumentasi = `<div class="bg-blue-50 border border-blue-200 p-1.5 rounded text-center"><a href="${j.bukti_dukung}" target="_blank" class="text-blue-700 text-[9px] font-bold underline block mb-0.5">🔗 Buka Drive</a><span class="text-[8px] text-slate-500 italic">Tanpa Preview</span></div>`;
         } else {
            selDokumentasi = `<a href="${j.bukti_dukung}" target="_blank" class="text-blue-600 underline font-bold text-[10px]">Lihat Tautan</a>`;
         }
@@ -163,14 +195,15 @@ export default function LogJurnalDiri() {
       const namaHari = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'][tglObj.getDay()];
       const tglFormat = `${namaHari}, ${tglObj.getDate()} ${bulanIndo[tglObj.getMonth()]} ${tglObj.getFullYear()}`;
 
+      // 🌟 PERBAIKAN LINTER 1: Mengganti break-words menjadi wrap-break-word
       barisTabel += `
         <tr class="border-b border-black">
           <td class="p-2 text-center align-top border-r border-black font-semibold">${idx+1}</td>
-          <td class="p-2 align-top border-r border-black font-medium">${tglFormat}</td>
-          <td class="p-2 align-top border-r border-black">${j.sasaran_sekolah}</td>
-          <td class="p-2 align-top border-r border-black">${j.aktivitas}</td>
-          <td class="p-2 align-top border-r border-black">${j.hasil_capaian}</td>
-          <td class="p-2 align-top w-40 text-center">${selDokumentasi}</td>
+          <td class="p-2 align-top border-r border-black font-medium leading-snug">${tglFormat}</td>
+          <td class="p-2 align-top border-r border-black leading-snug wrap-break-word">${j.sasaran_sekolah}</td>
+          <td class="p-2 align-top border-r border-black leading-relaxed wrap-break-word">${j.aktivitas}</td>
+          <td class="p-2 align-top border-r border-black leading-relaxed wrap-break-word">${j.hasil_capaian}</td>
+          <td class="p-2 align-middle text-center">${selDokumentasi}</td>
         </tr>`;
     });
 
@@ -182,40 +215,43 @@ export default function LogJurnalDiri() {
         <script src="https://cdn.tailwindcss.com"></script>
         <style>
           @media print {
-            @page { size: landscape; margin: 15mm; }
+            @page { size: landscape; margin: 12mm; }
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           }
+          table { table-layout: fixed; width: 100%; }
         </style>
       </head>
-      <body class="p-8 font-serif text-black bg-white text-sm">
-        <div class="text-center font-bold mb-8">
-          <h1 class="text-lg uppercase tracking-wide">LAPORAN HASIL PENDAMPINGAN PENGAWAS SEKOLAH</h1>
-          <h2 class="text-base uppercase tracking-wide">BULAN : ${namaBulan.toUpperCase()} ${tahun}</h2>
+      <body class="p-6 font-serif text-black bg-white text-xs">
+        <div class="text-center font-bold mb-6">
+          <h1 class="text-base uppercase tracking-wide">LAPORAN HASIL PENDAMPINGAN PENGAWAS SEKOLAH</h1>
+          <h2 class="text-sm uppercase tracking-wide mt-0.5">${judulPeriode}</h2>
         </div>
-        <div class="mb-6 space-y-1 font-bold">
+        <div class="mb-5 space-y-1 font-bold text-xs">
           <div class="flex"><div class="w-48">Nama Pengawas</div><div class="w-4">:</div><div>${namaLengkap}</div></div>
           <div class="flex"><div class="w-48">NIP</div><div class="w-4">:</div><div>${nip}</div></div>
           <div class="flex"><div class="w-48">Pangkat / Golongan</div><div class="w-4">:</div><div>${golongan}</div></div>
           <div class="flex"><div class="w-48">Cabang Dinas Pendidikan</div><div class="w-4">:</div><div>${instansi}</div></div>
         </div>
-        <table class="w-full text-left border-collapse border border-black mb-12">
+        
+        <table class="w-full text-left border-collapse border border-black mb-10 table-fixed">
           <thead>
-            <tr class="border-b border-black text-center font-bold">
-              <th class="p-2 border-r border-black w-10">NO</th>
-              <th class="p-2 border-r border-black w-40">Hari, Tanggal</th>
-              <th class="p-2 border-r border-black w-48">Tempat</th>
-              <th class="p-2 border-r border-black">Kegiatan</th>
-              <th class="p-2 border-r border-black w-64">Tujuan / Hasil</th>
-              <th class="p-2 w-40">Dokumentasi</th>
+            <tr class="border-b border-black text-center font-bold bg-slate-50">
+              <th class="p-2 border-r border-black" style="width: 5%;">NO</th>
+              <th class="p-2 border-r border-black" style="width: 14%;">Hari, Tanggal</th>
+              <th class="p-2 border-r border-black" style="width: 16%;">Tempat</th>
+              <th class="p-2 border-r border-black" style="width: 25%;">Kegiatan</th>
+              <th class="p-2 border-r border-black" style="width: 25%;">Tujuan / Hasil</th>
+              <th class="p-2" style="width: 15%;">Dokumentasi</th>
             </tr>
           </thead>
           <tbody>
             ${barisTabel}
           </tbody>
         </table>
-        <div class="flex justify-end pr-12">
+
+        <div class="flex justify-end pr-8">
           <div class="text-center">
-            <p class="mb-20">Pengawas Satuan Pendidikan,</p>
+            <p class="mb-16">Pengawas Satuan Pendidikan,</p>
             <p class="font-bold underline">${namaLengkap}</p>
             <p>NIP. ${nip}</p>
           </div>
@@ -226,11 +262,80 @@ export default function LogJurnalDiri() {
     
     w.document.close(); 
     w.focus(); 
+    setShowModalCetak(false); 
     setTimeout(() => { w.print(); }, 1500);
   };
 
   return (
-    <div className="space-y-8 animate-fade-in text-slate-100 font-sans pb-16 select-none max-w-7xl mx-auto px-4">
+    <div className="space-y-8 animate-fade-in text-slate-100 font-sans pb-16 select-none max-w-7xl mx-auto px-4 relative">
+      
+      {/* MODAL POPUP FILTER RENTANG TANGGAL CETAK PDF */}
+      {showModalCetak && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-[#061030] border-2 border-cyan-500/40 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-[0_0_40px_rgba(6,182,212,0.2)] space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <h3 className="text-lg font-black font-mono text-white flex items-center gap-2">
+                <span>🖨️</span> Filter Rentang Tanggal
+              </h3>
+              <button 
+                onClick={() => setShowModalCetak(false)}
+                className="w-8 h-8 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center font-bold transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 font-sans leading-relaxed">
+              Tentukan periode tanggal laporan jurnal yang ingin Anda cetak. Biarkan kosong jika ingin mencetak <strong className="text-amber-400">seluruh riwayat jurnal</strong>.
+            </p>
+
+            <div className="space-y-4 text-xs font-mono">
+              <div>
+                <label className="block text-slate-400 mb-1.5 font-bold">📅 Dari Tanggal (Awal)</label>
+                <input 
+                  type="date" 
+                  value={filterTglMulai} 
+                  onChange={e => setFilterTglMulai(e.target.value)} 
+                  className="w-full bg-slate-950 border border-slate-700 focus:border-cyan-400 rounded-xl p-3 text-white outline-none transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1.5 font-bold">📅 Sampai Tanggal (Akhir)</label>
+                <input 
+                  type="date" 
+                  value={filterTglSelesai} 
+                  onChange={e => setFilterTglSelesai(e.target.value)} 
+                  className="w-full bg-slate-950 border border-slate-700 focus:border-cyan-400 rounded-xl p-3 text-white outline-none transition-colors"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterTglMulai('');
+                  setFilterTglSelesai('');
+                  setShowModalCetak(false);
+                }}
+                className="flex-1 py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 font-mono text-xs font-bold transition-all cursor-pointer border border-slate-800"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleCetakPDFJurnal}
+                className="flex-1 py-3 px-4 rounded-xl bg-linear-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-mono text-xs font-black transition-all shadow-[0_0_15px_rgba(6,182,212,0.4)] hover:shadow-[0_0_20px_rgba(6,182,212,0.6)] cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span>🖨️</span> Cetak Laporan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* HEADER BANNER */}
       <div className="relative bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl mb-2 group shrink-0">
         <div className="absolute inset-0 z-0 pointer-events-none">
           <img src={bannerPena} alt="Banner" className="w-full h-full object-cover opacity-20 group-hover:opacity-30 transition-opacity duration-700" />
@@ -257,6 +362,7 @@ export default function LogJurnalDiri() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* KOLOM KIRI: FORM INPUT JURNAL */}
         <div className="lg:col-span-5 bg-slate-950 p-6 sm:p-8 rounded-3xl border border-amber-500/30 space-y-4 shadow-2xl">
           <h3 className="text-xs font-mono font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
             <span>📝</span> CATAT JURNAL PENDAMPINGAN
@@ -282,58 +388,135 @@ export default function LogJurnalDiri() {
             </div>
             
             <button 
-  type="submit" 
-  disabled={loading} 
-  className={`w-full mt-6 py-4 rounded-xl text-lg font-black uppercase tracking-widest shadow-xl transition-all duration-300 flex items-center justify-center gap-3 ${
-    loading 
-      ? 'bg-slate-700 text-slate-400 cursor-not-allowed' 
-      : 'bg-linear-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-emerald-500/30 hover:shadow-emerald-500/50 hover:-translate-y-1 cursor-pointer'
-  }`}
->
-  {loading ? (
-    <>
-      <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-      <span>MENYIMPAN...</span>
-    </>
-  ) : (
-    <>
-      <span className="text-2xl">💾</span> 
-      <span>SIMPAN JURNAL</span>
-    </>
-  )}
-</button>
+              type="submit" 
+              disabled={loading} 
+              className={`w-full mt-6 py-4 rounded-xl text-lg font-black uppercase tracking-widest shadow-xl transition-all duration-300 flex items-center justify-center gap-3 ${
+                loading 
+                  ? 'bg-slate-700 text-slate-400 cursor-not-allowed' 
+                  : 'bg-linear-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-emerald-500/30 hover:shadow-emerald-500/50 hover:-translate-y-1 cursor-pointer'
+              }`}
+            >
+              {loading ? (
+                <>
+                  <svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                  <span>MENYIMPAN...</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-2xl">💾</span> 
+                  <span>SIMPAN JURNAL</span>
+                </>
+              )}
+            </button>
           </form>
         </div>
 
+        {/* KOLOM KANAN: ARSIP JURNAL RESMI */}
         <div className="lg:col-span-7 bg-slate-900/60 p-6 sm:p-8 rounded-3xl border border-slate-800 space-y-4 shadow-xl">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <h3 className="text-sm font-black text-white font-mono">Arsip Jurnal Harian ({listJurnal.length})</h3>
-            <button onClick={handleCetakPDFJurnal} className="px-4 py-2 bg-slate-950 hover:bg-slate-800 text-amber-400 border border-slate-800 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer shadow"><span>🖨️</span> Cetak PDF Jurnal</button>
+            
+            <button 
+              onClick={() => setShowModalCetak(true)} 
+              className="px-4 py-2 bg-slate-950 hover:bg-slate-800 text-amber-400 border border-slate-800 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer shadow active:scale-95 transition-transform"
+            >
+              <span>🖨️</span> Cetak PDF Jurnal
+            </button>
           </div>
 
-          <div className="space-y-3 max-h-150 overflow-y-auto pr-1 font-medium">
-            {listJurnal.length === 0 ? <p className="p-12 text-center text-xs text-slate-500 font-mono">Belum ada rekaman log jurnal.</p> : listJurnal.map(j => (
-              <div key={j.id} className="p-5 bg-slate-950 rounded-2xl border border-slate-800/80 space-y-2.5 relative group hover:border-amber-500/40 transition-all shadow-md">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-2.5 text-xs font-mono">
-                  <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-1 rounded bg-amber-500/10 text-amber-400 font-bold">📅 {j.tanggal}</span>
-                    <span className="text-slate-400">• 📍 {j.sasaran_sekolah}</span>
-                  </div>
-                  <button onClick={() => handleDeleteJurnal(j.id)} className="text-rose-400 hover:text-rose-300 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-sm" title="Hapus catatan">🗑️</button>
-                </div>
-                <div className="text-xs space-y-1.5 text-slate-300 leading-relaxed font-sans">
-                  <p><strong className="text-slate-400 font-mono uppercase text-[10px]">Kegiatan:</strong> {j.aktivitas}</p>
-                  <p className="text-amber-200/90 bg-slate-900/80 p-2.5 rounded-xl border border-amber-500/10"><strong className="text-amber-400 font-mono uppercase text-[10px] block mb-0.5 font-bold">Hasil:</strong> {j.hasil_capaian}</p>
-                </div>
-                {j.bukti_dukung && (
-                  <div className="pt-2 border-t border-slate-900 flex justify-end">
-                    <a href={j.bukti_dukung} target="_blank" rel="noreferrer" className="text-[11px] font-mono font-bold text-cyan-400 hover:text-cyan-300 inline-flex items-center gap-1 bg-cyan-500/10 border border-cyan-500/20 px-3 py-1 rounded-lg">
-                      <span>🖼️</span> Lihat Foto Bukti ↗
-                    </a>
-                  </div>
-                )}
+          <div className="space-y-3">
+            {listJurnal.length === 0 ? (
+              <p className="p-12 text-center text-xs text-slate-500 font-mono bg-slate-950/40 rounded-2xl border border-slate-800/80">
+                📭 Belum ada rekaman log jurnal pendampingan.
+              </p>
+            ) : (
+              // 🌟 PERBAIKAN LINTER 2: Mengganti max-h-[600px] menjadi max-h-150
+              <div className="overflow-x-auto max-h-150 rounded-2xl border border-slate-800 bg-slate-950/80 shadow-2xl custom-scrollbar">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 bg-[#061030] text-[11px] font-mono font-black uppercase tracking-wider text-cyan-400 sticky top-0 z-10 shadow-sm">
+                      <th className="py-3 px-3 text-center w-12 border-r border-slate-800/80">NO</th>
+                      {/* 🌟 PERBAIKAN LINTER 3-6: Mengganti min-w-[...px] menjadi min-w kanonikal */}
+                      <th className="py-3 px-3 border-r border-slate-800/80 min-w-32.5">Hari, Tanggal</th>
+                      <th className="py-3 px-3 border-r border-slate-800/80 min-w-30">Tempat</th>
+                      <th className="py-3 px-3 border-r border-slate-800/80 min-w-40">Kegiatan</th>
+                      <th className="py-3 px-3 border-r border-slate-800/80 min-w-45">Tujuan / Hasil</th>
+                      <th className="py-3 px-2 text-center w-24">Dokumentasi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/80 text-xs text-slate-200 font-sans">
+                    {listJurnal.map((item, index) => (
+                      <tr key={item.id} className="hover:bg-blue-900/20 transition-colors group">
+                        
+                        <td className="py-3 px-3 text-center font-mono font-bold text-slate-400 border-r border-slate-800/80 align-top">
+                          {index + 1}
+                        </td>
+                        
+                        <td className="py-3 px-3 font-bold text-white border-r border-slate-800/80 align-top whitespace-nowrap">
+                          {formatHariTanggal(item.tanggal)}
+                        </td>
+                        
+                        <td className="py-3 px-3 font-mono text-cyan-300 font-semibold border-r border-slate-800/80 align-top">
+                          {item.sasaran_sekolah || '-'}
+                        </td>
+                        
+                        <td className="py-3 px-3 text-slate-300 border-r border-slate-800/80 align-top leading-relaxed">
+                          {item.aktivitas || '-'}
+                        </td>
+                        
+                        <td className="py-3 px-3 text-amber-200/90 font-medium border-r border-slate-800/80 align-top leading-relaxed whitespace-pre-wrap">
+                          {item.hasil_capaian || '-'}
+                        </td>
+                        
+                        <td className="py-2 px-2 text-center align-middle">
+                          {item.bukti_dukung ? (
+                            <div className="flex flex-col items-center gap-1">
+                              <a 
+                                href={item.bukti_dukung} 
+                                target="_blank" 
+                                rel="noreferrer"
+                                className="block group-hover:scale-105 transition-transform duration-200"
+                                title="Klik untuk memperbesar gambar"
+                              >
+                                <div className="w-16 h-12 rounded-lg overflow-hidden border border-cyan-400/50 bg-slate-900 shadow-md flex items-center justify-center relative">
+                                  <img 
+                                    src={item.bukti_dukung} 
+                                    alt="Bukti" 
+                                    className="w-full h-full object-cover"
+                                  />
+                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-[9px] text-white font-mono">
+                                    🔍
+                                  </div>
+                                </div>
+                              </a>
+                              <button
+                                onClick={() => handleDeleteJurnal(item.id)}
+                                className="text-[10px] font-mono text-rose-400 hover:text-rose-300 underline opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                                title="Hapus catatan"
+                              >
+                                [Hapus]
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="text-[10px] font-mono text-slate-500 italic block">Tanpa Foto</span>
+                              <button
+                                onClick={() => handleDeleteJurnal(item.id)}
+                                className="text-[10px] font-mono text-rose-400 hover:text-rose-300 underline opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                                title="Hapus catatan"
+                              >
+                                [Hapus]
+                              </button>
+                            </div>
+                          )}
+                        </td>
+
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            ))}
+            )}
           </div>
         </div>
       </div>

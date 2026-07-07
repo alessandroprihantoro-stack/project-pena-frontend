@@ -1,5 +1,21 @@
 import React from 'react';
 
+// 🌟 STANDARDISASI UNOR (Untuk Filter Admin yang Akurat)
+const DAFTAR_UNOR_JATENG = [
+  "Cabang Dinas Pendidikan Wilayah I",
+  "Cabang Dinas Pendidikan Wilayah II",
+  "Cabang Dinas Pendidikan Wilayah III",
+  "Cabang Dinas Pendidikan Wilayah IV",
+  "Cabang Dinas Pendidikan Wilayah V",
+  "Cabang Dinas Pendidikan Wilayah VI",
+  "Cabang Dinas Pendidikan Wilayah VII",
+  "Cabang Dinas Pendidikan Wilayah VIII",
+  "Cabang Dinas Pendidikan Wilayah IX",
+  "Cabang Dinas Pendidikan Wilayah X",
+  "Cabang Dinas Pendidikan Wilayah XI",
+  "Cabang Dinas Pendidikan Wilayah XII",
+];
+
 interface TabProfilPengawasProps {
   pNama: string;
   setPNama: (val: string) => void;
@@ -47,9 +63,22 @@ export default function TabProfilPengawas({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* 🌟 KOLOM INSTANSI / UNOR (DIPERBARUI MENJADI DROPDOWN BAKU) */}
           <div>
-            <label className="block font-mono text-slate-300 mb-1">Instansi / Cabdindik</label>
-            <input type="text" value={pInstansi} onChange={e=>setPInstansi(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-white focus:border-cyan-500 outline-none" />
+            <label className="block font-mono text-slate-300 mb-1">Instansi / Unor</label>
+            <select 
+              value={pInstansi || ''} 
+              onChange={e=>setPInstansi(e.target.value)} 
+              required
+              className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-white focus:border-cyan-500 outline-none cursor-pointer"
+            >
+              <option value="" disabled>-- Pilih Cabang Dinas / Unor --</option>
+              {DAFTAR_UNOR_JATENG.map((unor, idx) => (
+                <option key={idx} value={unor} className="bg-slate-950 text-white py-1">
+                  {unor}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block font-mono text-slate-300 mb-1">Jabatan Pengawas</label>

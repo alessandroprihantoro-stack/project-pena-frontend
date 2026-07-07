@@ -9,12 +9,12 @@ import { supabase } from '../../supabaseClient';
 import dashboardPena from '../../assets/dashboard_pena.png'; 
 import bannerPena from '../../assets/banner_pena.png'; 
 
-// 🚀 IMPORT KE-5 KOMPONEN ANAK KITA
+// 🚀 IMPORT KE-5 KOMPONEN ANAK KITA (Sekolah Binaan DIHAPUS DARI DASHBOARD UTAMA)
 import TabProfilPengawas from './components/TabProfilPengawas';
-import TabSekolahBinaan from './components/TabSekolahBinaan';
 import TabShowcase from './components/TabShowcase';
 import TabValidasiPraktik from './components/TabValidasi'; 
 import TabValidasiPrestasi from './components/TabValidasiPrestasi';
+import TabBiodataPengawas from './TabBiodataPengawas';
 
 interface PrestasiAjuan { id: string; sekolah_id: string; user_id: string; nama_siswa_atau_kegiatan: string; jenis_prestasi: string; jalur?: string; juara: string; tahun: string; poin: number; bukti_sertifikat: string; status_validasi: string; created_at: string; nama_sekolah?: string; logo_url?: string | null; npsn?: string; kategori?: string; jenis?: string; nama_prestasi?: string;}
 interface PraktikBaik { id: string; user_id: string; sekolah_id: string; judul: string; deskripsi: string; jenis_media: string; media_url: string; status_validasi: string; created_at: string; nama_sekolah?: string; npsn?: string;}
@@ -25,7 +25,8 @@ interface MasterSekolah { id: string; npsn: string; nama_sekolah: string; nama_k
 interface Reaksi { id: string; praktik_baik_id: string; user_id: string; jenis: 'LIKE' | 'DISLIKE'; }
 interface Komentar { id: string; praktik_baik_id: string; user_id: string; komentar: string; created_at: string; profiles?: { nama_lengkap: string; avatar_url: string }; }
 
-type TabKomando = 'SHOWCASE' | 'SEKOLAH_BINAAN' | 'VALIDASI_PRAKTIK' | 'PRESTASI' | 'PROFIL';
+// 🌟 PERBAIKAN 1: Mengganti 'SEKOLAH_BINAAN' menjadi 'BIODATA'
+type TabKomando = 'SHOWCASE' | 'BIODATA' | 'VALIDASI_PRAKTIK' | 'PRESTASI' | 'PROFIL';
 
 const panenKepalaSekolah = (targetNpsn: string, targetId: string, allSeks: any[], allBinaan: any[], allProfs: any[]) => {
   const npsnClean = String(targetNpsn || '').trim();
@@ -71,12 +72,12 @@ export default function DashboardPengawas() {
   const [pNipResmi, setPNipResmi] = useState('');
   const [pGolongan, setPGolongan] = useState('');
   const defaultComments = [
-  "Luar biasa, sangat menginspirasi! 🚀",
-  "Inovasi yang cerdas dan solutif. 💡",
-  "Praktik baik yang patut dicontoh. 👏",
-  "Sangat kreatif, maju terus! 🔥",
-  "Izin mengadaptasi program ini di sekolah kami. ✨"
-];
+    "Luar biasa, sangat menginspirasi! 🚀",
+    "Inovasi yang cerdas dan solutif. 💡",
+    "Praktik baik yang patut dicontoh. 👏",
+    "Sangat kreatif, maju terus! 🔥",
+    "Izin mengadaptasi program ini di sekolah kami. ✨"
+  ];
 
   const fetchInteraksi = async () => {
     try {
@@ -164,7 +165,6 @@ export default function DashboardPengawas() {
 
       const finalKepsek = panenKepalaSekolah(b_npsn, b_id, masterSeks, binaanList, allProfs);
 
-      // 👈 WILAYAH DISUNTIKKAN KE MASTER
       return {
         id: matching?.id || b.sekolah_id || b.npsn, npsn: b_npsn || '-', nama_sekolah: finalNama,
         nama_kepala_sekolah: finalKepsek, logo_url: matching?.logo_url || profMatch?.avatar_url || null,
@@ -242,7 +242,6 @@ export default function DashboardPengawas() {
     } catch (err: any) { alert("Gagal update profil: " + err.message); } finally { setProfilLoading(false); }
   };
 
-  // MESIN PENGOLAHAN LOGIKA KLASEMEN & FILTER
   const praktikMenunggu = listPraktik.filter(p => p.status_validasi === 'MENUNGGU');
   const praktikDisetujui = listPraktik.filter(p => p.status_validasi === 'DISETUJUI');
   const prestasiMenunggu = listPrestasi.filter(p => p.status_validasi === 'MENUNGGU');
@@ -256,7 +255,6 @@ export default function DashboardPengawas() {
     prestasiTerfilter = prestasiTerfilter.filter(pr => { const val = String(pr.jalur || pr.kategori || pr.jenis_prestasi || pr.jenis || pr.nama_prestasi || '').toUpperCase(); return val.includes('TKA') || val.includes('AKADEMIK') || val.includes('NILAI'); });
   }
 
-  // 👈 PEMETAAN KLASEMEN DENGAN ATRIBUT WILAYAH
   const mapKlasemen = listSekolahMaster.reduce((acc, sek) => {
     const safeNpsn = String(sek.npsn || '').trim();
     if (safeNpsn && safeNpsn !== '-') {
@@ -471,19 +469,15 @@ export default function DashboardPengawas() {
       
       {/* HEADER & PROFIL PENGAWAS TERPADU */}
       <div className="relative rounded-3xl overflow-hidden shadow-neo mb-6 border-4 border-black dark:border-2 dark:border-slate-800 dark:shadow-2xl w-full flex flex-col justify-end min-h-75 sm:min-h-100">
-        {/* Latar Belakang Gambar Full tanpa efek zoom */}
         <div className="absolute inset-0 z-0 pointer-events-none">
           <img src={dashboardPena} alt="PENA Enterprise" className="w-full h-full object-cover object-center" />
-          {/* Gradasi gelap di bagian bawah agar teks profil tetap terbaca jelas */}
           <div className="absolute inset-0 bg-linear-to-t from-slate-950/90 via-slate-900/20 to-transparent dark:from-slate-950 dark:via-slate-900/50" />
         </div>
         
-        {/* Badge Otoritas */}
         <div className="absolute top-4 right-4 z-10 px-4 py-2 rounded-xl font-mono text-[10px] font-black uppercase tracking-wider backdrop-blur-md bg-white/90 border-2 border-black text-black shadow-neo-sm dark:bg-slate-900/90 dark:border-cyan-500/30 dark:text-cyan-400 dark:shadow-none">
           OTORITAS: PENGAWAS
         </div>
 
-        {/* Konten Profil di Atas Banner */}
         <div className="relative z-10 p-6 sm:p-8 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-6 mt-auto w-full">
           <div className="flex items-end sm:items-center gap-5">
             {pFotoUrl ? (
@@ -502,20 +496,20 @@ export default function DashboardPengawas() {
         </div>
       </div>
 
-      {/* NAVIGASI TAB */}
+      {/* 🌟 PERBAIKAN 2: NAVIGASI TAB (Sekolah Binaan Diganti Jadi Biodata & Berkas) */}
       <div className="flex gap-2 p-2 rounded-2xl overflow-x-auto font-mono text-xs transition-all bg-white border-4 border-black shadow-neo dark:bg-slate-900/80 dark:border-2 dark:border-slate-800 dark:shadow-none">
         <button onClick={() => setActiveTab('SHOWCASE')} className={`flex-1 min-w-45 py-3.5 px-4 rounded-xl font-black transition-all cursor-pointer flex items-center justify-center gap-2 border-2 ${activeTab === 'SHOWCASE' ? 'bg-yellow-400 text-black border-black shadow-neo-md -translate-y-1 dark:bg-blue-600 dark:text-white dark:border-transparent dark:shadow-lg dark:shadow-blue-600/30 dark:translate-y-0' : 'bg-transparent border-transparent text-slate-600 hover:text-black hover:border-black/20 dark:text-slate-400 dark:hover:text-white dark:hover:border-transparent'}`}>🏆 Dasbor Papan</button>
-        <button onClick={() => setActiveTab('SEKOLAH_BINAAN')} className={`flex-1 min-w-45 py-3.5 px-4 rounded-xl font-black transition-all cursor-pointer flex items-center justify-center gap-2 border-2 ${activeTab === 'SEKOLAH_BINAAN' ? 'bg-yellow-400 text-black border-black shadow-neo-md -translate-y-1 dark:bg-blue-600 dark:text-white dark:border-transparent dark:shadow-lg dark:shadow-blue-600/30 dark:translate-y-0' : 'bg-transparent border-transparent text-slate-600 hover:text-black hover:border-black/20 dark:text-slate-400 dark:hover:text-white dark:hover:border-transparent'}`}>🏫 Sekolah Binaan</button>
+        
+        <button onClick={() => setActiveTab('BIODATA')} className={`flex-1 min-w-45 py-3.5 px-4 rounded-xl font-black transition-all cursor-pointer flex items-center justify-center gap-2 border-2 ${activeTab === 'BIODATA' ? 'bg-yellow-400 text-black border-black shadow-neo-md -translate-y-1 dark:bg-blue-600 dark:text-white dark:border-transparent dark:shadow-lg dark:shadow-blue-600/30 dark:translate-y-0' : 'bg-transparent border-transparent text-slate-600 hover:text-black hover:border-black/20 dark:text-slate-400 dark:hover:text-white dark:hover:border-transparent'}`}>📋 Biodata & Berkas</button>
+        
         <button onClick={() => setActiveTab('VALIDASI_PRAKTIK')} className={`flex-1 min-w-50 py-3.5 px-4 rounded-xl font-black transition-all cursor-pointer flex items-center justify-center gap-2 border-2 ${activeTab === 'VALIDASI_PRAKTIK' ? 'bg-yellow-400 text-black border-black shadow-neo-md -translate-y-1 dark:bg-blue-600 dark:text-white dark:border-transparent dark:translate-y-0' : 'bg-transparent border-transparent text-slate-600 hover:text-black hover:border-black/20 dark:text-slate-400 dark:hover:text-white dark:hover:border-transparent'}`}>💡 Validasi Praktik {praktikMenunggu.length > 0 && <span className="px-1.5 py-0.2 bg-red-500 text-white border border-black dark:border-none rounded-full text-[10px] animate-pulse">{praktikMenunggu.length}</span>}</button>
         <button onClick={() => setActiveTab('PRESTASI')} className={`flex-1 min-w-45 py-3.5 px-4 rounded-xl font-black transition-all cursor-pointer flex items-center justify-center gap-2 border-2 ${activeTab === 'PRESTASI' ? 'bg-yellow-400 text-black border-black shadow-neo-md -translate-y-1 dark:bg-blue-600 dark:text-white dark:border-transparent dark:translate-y-0' : 'bg-transparent border-transparent text-slate-600 hover:text-black hover:border-black/20 dark:text-slate-400 dark:hover:text-white dark:hover:border-transparent'}`}>🎖️ Validasi Prestasi {prestasiMenunggu.length > 0 && <span className="px-1.5 py-0.2 bg-amber-500 text-black border border-black dark:border-none rounded-full text-[10px] animate-pulse">{prestasiMenunggu.length}</span>}</button>
       </div>
 
-      {/* RENDER KE-5 KOMPONEN ANAK SECARA BERSIH DAN ELEGAN */}
-      
+      {/* 🌟 PERBAIKAN 3: RENDER KE-5 KOMPONEN ANAK SECARA BERSIH DAN ELEGAN */}
       {activeTab === 'SHOWCASE' && (
         <TabShowcase 
           filterKategori={filterKategori} setFilterKategori={setFilterKategori}
-          // 👈 DATA YANG DIKIRIM SEKARANG DATA UTUH BUKAN POTONGAN
           papanDataUtuh={sortedKlasemen} 
           tampilSemuaSekolah={tampilSemuaSekolah} setTampilSemuaSekolah={setTampilSemuaSekolah}
           inovasiDitampilkan={inovasiDitampilkan} inovasiTotal={inovasiTerurut.length}
@@ -524,8 +518,9 @@ export default function DashboardPengawas() {
         />
       )}
 
-      {activeTab === 'SEKOLAH_BINAAN' && (
-        <TabSekolahBinaan listSekolahMaster={listSekolahMaster} />
+      {/* Sekolah Binaan telah digantikan seutuhnya oleh TabBiodataPengawas */}
+      {activeTab === 'BIODATA' && (
+        <TabBiodataPengawas profile={profile} />
       )}
 
       {activeTab === 'VALIDASI_PRAKTIK' && (

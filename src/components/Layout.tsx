@@ -22,7 +22,7 @@ export default function Layout() {
   const location = useLocation(); 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
-  // 🌟 STATE: Untuk mengingat menu mana yang sedang dibuka/dilipat
+  // STATE: Untuk mengingat menu mana yang sedang dibuka/dilipat
   const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
 
   // === MESIN SAKLAR TEMA PENA ===
@@ -61,6 +61,10 @@ export default function Layout() {
           { name: "Sekolah Binaan", path: "/pengawas/sekolah", icon: "📁" },
           { name: "Log Jurnal Diri", path: "/pengawas/profil", icon: "📝" },
         ];
+      case "CABDIN":
+        return [
+          { name: "Pusat Kendali", path: "/cabdin/dashboard", icon: "🦅" },
+        ];
       case "SEKOLAH":
         return [
           { 
@@ -79,17 +83,16 @@ export default function Layout() {
     }
   };
 
-  // 🌟 CHECKPOINT PROTECTION: Penyuntikan Menu Pusat Informasi secara dinamis & aman
+  // CHECKPOINT PROTECTION: Penyuntikan Menu Pusat Informasi secara dinamis & aman
   const rawNavItems = getNavigation(profile?.role);
-  
   const navItems = [...rawNavItems];
   
-  // 1. Menu Universal "Pusat Informasi" untuk SEMUA AKUN (Admin, Pengawas, Sekolah)
+  // 1. Menu Universal "Pusat Informasi" untuk SEMUA AKUN
   if (!navItems.some((i: { path?: string }) => i.path === '/pusat-informasi')) {
     navItems.push({ name: "Pusat Informasi", path: "/pusat-informasi", icon: "📢" });
   }
 
-  // 2. Menu Khusus Admin "Kelola Info" (Hanya muncul jika login sebagai ADMIN)
+  // 2. Menu Khusus Admin "Kelola Info"
   if (profile?.role === 'ADMIN' && !navItems.some((i: { path?: string }) => i.path === '/admin/papan-informasi')) {
     navItems.push({ name: "Kelola Info", path: "/admin/papan-informasi", icon: "⚙️" });
   }
@@ -99,7 +102,7 @@ export default function Layout() {
     navigate("/login");
   };
 
-  // 🌟 SIDEBAR CONTENT
+  // SIDEBAR CONTENT
   const renderSidebarContent = () => (
     <>
       {/* BRANDING LOGO */}
@@ -121,7 +124,7 @@ export default function Layout() {
         </div>
       </div>
 
-      {/* 🌟 MENU NAVIGASI DINAMIS (DIPERBARUI) */}
+      {/* MENU NAVIGASI YANG RAPI & EKSKLUSIF */}
       <nav className="flex-1 px-5 py-6 space-y-2.5 overflow-y-auto custom-scrollbar flex flex-col">
         <div className={`px-2 pb-2 mb-2 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 ${
           isDarkMode ? "text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.4)]" : "text-blue-700"
@@ -153,14 +156,12 @@ export default function Layout() {
                           ? 'bg-linear-to-r from-blue-600/40 via-cyan-500/20 to-transparent text-cyan-300 font-bold border-l-4 border-cyan-400 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_0_15px_rgba(6,182,212,0.2)]' 
                           : 'text-blue-200/70 hover:text-white hover:bg-blue-900/40 font-medium border-l-4 border-transparent hover:border-blue-500/50')
                       : (isActivePath 
-                          // 🔥 GAYA NEO-BRUTALISM AKTIF (SIANG) 🔥
                           ? 'bg-white border-2 border-black shadow-[3px_3px_0px_rgba(0,0,0,1)] text-blue-700 font-black transform -translate-y-0.5' 
                           : 'bg-transparent border-2 border-transparent text-slate-600 hover:bg-slate-100 hover:border-black/20 hover:text-black font-bold')
                     }
                   `}
                 >
                   <div className="flex items-center gap-3.5">
-                    {/* Icon Box */}
                     <div className={`w-9 h-9 flex items-center justify-center rounded-xl text-base transition-all duration-300 shrink-0 ${
                       isDarkMode 
                         ? (isActivePath 
@@ -175,7 +176,6 @@ export default function Layout() {
                     <span className="text-sm tracking-wide">{item.name}</span>
                   </div>
                   
-                  {/* Rotasi Panah */}
                   <svg 
                     className={`w-4 h-4 transition-transform duration-300 ${
                       item.subItems 
@@ -188,7 +188,6 @@ export default function Layout() {
                   </svg>
                 </NavLink>
 
-                {/* SUB-MENU (Dengan Garis Sambung Vertikal) */}
                 {item.subItems && isExpanded && (
                   <div className={`ml-8 pl-6 mt-2 mb-3 flex flex-col gap-1.5 border-l-2 animate-fade-in ${isDarkMode ? 'border-cyan-500/30' : 'border-blue-400'}`}>
                     {item.subItems.map((sub, idx) => (
@@ -213,25 +212,32 @@ export default function Layout() {
           })}
         </div>
 
-        {/* 🌟 LOGO PENA DI BAWAH MENU (Widget yang tergencet resmi dihapus dari sini!) 🌟 */}
+        {/* 🌟 LOGO PENA KEMBALI KE POSISI SEMULA 🌟 */}
         <div className="mt-8 pt-6 border-t-2 border-dashed border-black/10 dark:border-slate-800/50 flex flex-col items-center justify-center opacity-60 hover:opacity-100 transition-all duration-300 cursor-default">
           <img src={logoPena} alt="PENA" className="w-20 h-auto object-contain drop-shadow-sm filter grayscale hover:grayscale-0 transition-all duration-300" />
           <span className="text-[9px] font-black tracking-widest uppercase mt-2 text-slate-400 dark:text-slate-500">PENA Enterprise OS</span>
         </div>
       </nav>
 
-      {/* FOOTER SIDEBAR DENGAN TEMA */}
+      {/* FOOTER SIDEBAR - 🌟 LOGIKA AVATAR CERDAS 🌟 */}
       <div className={`p-6 pb-8 shrink-0 transition-colors ${
         isDarkMode ? "border-t border-blue-500/30 bg-linear-to-t from-[#030818] via-[#040c24]/90 to-transparent" : "border-t-2 border-black/10 bg-white"
       }`}>
         <div className="flex items-center gap-3 mb-6 px-2">
-          {profile?.avatar_url ? (
+          
+          {/* OTO-DETEKSI AVATAR: Jika CABDIN atau ADMIN, otomatis pakai logo Jateng. Jika Pengawas/Sekolah, pakai avatar_url atau huruf inisial */}
+          {profile?.role === 'CABDIN' || profile?.role === 'ADMIN' ? (
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-white shadow-sm border-2 ${isDarkMode ? "border-cyan-400/60 shadow-[0_0_10px_rgba(6,182,212,0.3)] p-1" : "border-slate-300 p-1"}`}>
+              <img src={logoJateng} alt="Jawa Tengah" className="w-full h-full object-contain drop-shadow-sm" />
+            </div>
+          ) : profile?.avatar_url ? (
             <img src={profile.avatar_url} alt="" className={`w-10 h-10 rounded-full object-cover shrink-0 bg-white p-0.5 shadow-sm border-2 ${isDarkMode ? "border-cyan-400/60 shadow-[0_0_10px_rgba(6,182,212,0.3)]" : "border-black"}`} />
           ) : (
             <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0 font-mono border-2 ${isDarkMode ? "bg-linear-to-br from-cyan-500 to-blue-600 shadow-[0_0_10px_rgba(6,182,212,0.4)] border-transparent" : "bg-blue-600 border-black shadow-sm"}`}>
               {profile?.nama_lengkap?.[0] || "U"}
             </div>
           )}
+
           <div className="overflow-hidden flex-1">
             <h4 className={`text-xs font-bold truncate ${isDarkMode ? "text-blue-100" : "text-slate-800"}`}>
               {profile?.nama_lengkap || "Pengguna"}
@@ -265,7 +271,7 @@ export default function Layout() {
       isDarkMode ? "bg-[#040c24] text-blue-50" : "bg-slate-50 text-slate-900"
     }`}>
       
-      {/* 🌟 BACKGROUND GAMBAR KHUSUS MODE GELAP */}
+      {/* BACKGROUND GAMBAR KHUSUS MODE GELAP */}
       {isDarkMode && (
         <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
           <img 
@@ -277,7 +283,6 @@ export default function Layout() {
         </div>
       )}
 
-      {/* Efek Cahaya Latar */}
       {isDarkMode && <div className="absolute top-0 right-1/4 w-125 h-125 bg-linear-to-br from-cyan-500/15 via-blue-500/10 to-transparent rounded-full blur-[140px] pointer-events-none z-0" />}
 
       {/* ================= SIDEBAR DESKTOP ================= */}
@@ -319,7 +324,7 @@ export default function Layout() {
             <div>
               <h1 className={`text-sm font-bold flex items-center gap-2.5 tracking-wide ${isDarkMode ? "text-blue-100" : "text-slate-800"}`}>
                 <span className={`w-2.5 h-2.5 rounded-full animate-pulse shadow-sm ${isDarkMode ? "bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" : "bg-blue-600 shadow-blue-500/50"}`} /> 
-                {profile?.role === 'ADMIN' ? 'Superuser Markas' : profile?.role === 'PENGAWAS' ? 'Wilayah Pengawasan' : 'Satuan Pendidikan'}
+                {profile?.role === 'ADMIN' ? 'Superuser Markas' : profile?.role === 'PENGAWAS' ? 'Wilayah Pengawasan' : profile?.role === 'CABDIN' ? 'Eksekutif Cabang Dinas' : 'Satuan Pendidikan'}
               </h1>
             </div>
           </div>
@@ -338,10 +343,48 @@ export default function Layout() {
           </div>
         </header>
 
-        {/* RUANG RENDER HALAMAN (Outlet) */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-10 relative z-10 custom-scrollbar">
+        {/* RUANG RENDER HALAMAN */}
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-10 relative z-10 custom-scrollbar pb-24 lg:pb-10">
           <Outlet />
         </main>
+
+        {/* BILAH NAVIGASI BAWAH ALA APLIKASI NATIVE (KHUSUS MOBILE) */}
+        <nav className={`lg:hidden fixed bottom-0 inset-x-0 h-16 transition-all duration-300 flex items-center justify-around px-2 z-30 shadow-[0_-4px_20px_rgba(0,0,0,0.15)] border-t ${
+          isDarkMode 
+            ? "bg-[#061030]/95 backdrop-blur-2xl border-cyan-500/30 text-blue-200" 
+            : "bg-white/95 backdrop-blur-2xl border-slate-200/80 text-slate-600"
+        }`}>
+          {navItems.slice(0, 4).map((item) => {
+            const isActive = location.pathname === item.path;
+            return (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                onClick={() => setIsMobileMenuOpen(false)}
+                className={`flex flex-col items-center justify-center w-full h-full gap-1 transition-all duration-200 ${
+                  isActive 
+                    ? (isDarkMode ? "text-cyan-400 font-bold scale-105 drop-shadow-[0_0_8px_rgba(34,211,238,0.5)]" : "text-blue-600 font-black scale-105")
+                    : "opacity-70 hover:opacity-100"
+                }`}
+              >
+                <span className="text-lg leading-none">{item.icon}</span>
+                <span className="text-[10px] truncate max-w-16 font-mono tracking-tighter">
+                  {item.name.split(" ")[0]}
+                </span>
+              </NavLink>
+            );
+          })}
+          
+          <button
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className={`flex flex-col items-center justify-center w-full h-full gap-1 transition-all duration-200 opacity-70 hover:opacity-100 ${
+              isMobileMenuOpen ? (isDarkMode ? "text-cyan-400 font-bold" : "text-blue-600 font-black") : ""
+            }`}
+          >
+            <span className="text-lg leading-none">☰</span>
+            <span className="text-[10px] font-mono tracking-tighter">Menu</span>
+          </button>
+        </nav>
 
       </div>
     </div>

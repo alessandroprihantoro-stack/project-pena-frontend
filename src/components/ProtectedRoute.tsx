@@ -23,10 +23,12 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
   }
 
   if (allowedRoles && !allowedRoles.includes(profile.role)) {
-    const ruteMarkas: Record<UserRole, string> = {
+    // 🌟 CHECKPOINT PROTECTION: Ditambahkan rute 'CABDIN' agar tidak terpental ke login
+    const ruteMarkas: Record<string, string> = {
       ADMIN: '/admin/dashboard', 
       PENGAWAS: '/pengawas/dashboard',
       SEKOLAH: '/sekolah/dashboard',
+      CABDIN: '/cabdin/dashboard',
     };
     return <Navigate to={ruteMarkas[profile.role] || '/login'} replace />;
   }
