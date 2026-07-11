@@ -4,19 +4,23 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom'; // Ditambahkan useNavigate
 
 // IMPORT KOMPONEN ANAK
 import ModalDetailPrestasi from './components/ModalDetailPrestasi';
 import FormEditSekolah from './components/FormEditSekolah';
 import PapanKlasemen from './components/PapanKlasemen';
 import GaleriInovasi, { GaleriInovasiItem } from './components/GaleriInovasi';
+import ManajemenNilai from './components/ManajemenNilai';
 
 interface SekolahPelengkap { id?: string; user_id?: string; npsn?: string; nama_sekolah?: string; nama_kepala_sekolah?: string; nip_kepala_sekolah?: string; alamat?: string; logo_url?: string; total_guru?: number; total_murid?: number; total_tendik?: number; cabang_dinas?: string; kabupaten_kota?: string; }
 interface KlasemenKlub { id: string; peringkat: number; nama_sekolah: string; nama_kepsek: string; logo_url: string | null; jumlah_prestasi: number; total_poin: number; tka_score: number; is_me: boolean; cabang_dinas?: string; kabupaten_kota?: string; }
 interface Reaksi { id: string; praktik_baik_id: string; user_id: string; jenis: 'LIKE' | 'DISLIKE'; }
 interface Komentar { id: string; praktik_baik_id: string; user_id: string; komentar: string; created_at: string; profiles?: { nama_lengkap: string; avatar_url: string }; }
 interface StatPrestasi { juara1: number; juara2: number; juara3: number; lainnya: number; total: number; }
+
+// 🌟 MENDEFINISIKAN TIPE TAB
+type TabSekolah = 'KLASEMEN' | 'MANTAP_SHARE' | 'ANALITIK' | 'DAPUR';
 
 const bersihkanNamaSekolah = (prof: any, sek: any, bin: any) => {
   const kandidat = [sek?.nama_sekolah, bin?.nama_sekolah, prof?.nama_lengkap];
@@ -46,7 +50,11 @@ const panenKepalaSekolah = (targetNpsn: string, targetId: string, targetNama: st
 export default function DashboardSekolah() {
   const { profile } = useAuth();
   const location = useLocation(); 
+  const navigate = useNavigate();
   
+  // 🌟 STATE UNTUK MENGONTROL TAB YANG AKTIF
+  const [activeTab, setActiveTab] = useState<TabSekolah>('KLASEMEN');
+
   const [liveProfile, setLiveProfile] = useState(profile);
   const [dataSekolah, setDataSekolah] = useState<SekolahPelengkap | null>(null);
   const [papanPrestasi, setPapanPrestasi] = useState<KlasemenKlub[]>([]);
@@ -54,6 +62,9 @@ export default function DashboardSekolah() {
   const [loading, setLoading] = useState(true);
   
   const [filterKategori, setFilterKategori] = useState<'SEMUA' | 'LOMBA' | 'LULUSAN' | 'TKA'>('SEMUA');
+  const [pilihKategoriPrestasi, setPilihKategoriPrestasi] = useState("Semua");
+  const [pilihJenisPrestasi, setPilihJenisPrestasi] = useState("Semua");
+  
   const [kategoriShare, setKategoriShare] = useState('SEMUA');
   const [listReaksi, setListReaksi] = useState<Reaksi[]>([]);
   const [listKomentar, setListKomentar] = useState<Komentar[]>([]);
@@ -196,6 +207,22 @@ export default function DashboardSekolah() {
         } else if (filterKategori === 'LULUSAN') {
           pList = pList.filter(pr => { const val = String(pr.jalur || pr.kategori || pr.jenis_prestasi || pr.jenis || '').toUpperCase(); return val.includes('LULUSAN') || val.includes('KELULUSAN') || ['SNBP', 'SNBT', 'MANDIRI', 'KEDINASAN'].includes(val); });
         }
+
+        if ((filterKategori === 'SEMUA' || filterKategori === 'LOMBA') && pilihKategoriPrestasi !== "Semua") {
+            const keywordKategori = pilihKategoriPrestasi.toLowerCase().trim();
+            pList = pList.filter(pr => {
+                const val = String(pr.kategori_prestasi || pr.kategori_lomba || pr.kategori || pr.jalur || pr.bidang || '').toLowerCase();
+                return val.includes(keywordKategori);
+            });
+        }
+
+        if ((filterKategori === 'SEMUA' || filterKategori === 'LOMBA') && pilihJenisPrestasi !== "Semua") {
+            const keywordJenis = pilihJenisPrestasi.toLowerCase().trim();
+            pList = pList.filter(pr => {
+                const val = String(pr.jenis_prestasi || pr.nama_lomba || pr.jenis || pr.nama_kegiatan || pr.jalur || '').toLowerCase();
+                return val.includes(keywordJenis);
+            });
+        }
         
         const pts = pList.reduce((acc, curr) => acc + (Number(curr.poin) || Number(curr.points) || 1), 0);
         const namaSekolahBersih = isMe ? namaAsliInstitusi : bersihkanNamaSekolah(p, matchingSek, matchingBinaan);
@@ -218,8 +245,10 @@ export default function DashboardSekolah() {
         if (filterKategori === 'TKA') return b.tka_score - a.tka_score;
         return b.jumlah_prestasi !== a.jumlah_prestasi ? b.jumlah_prestasi - a.jumlah_prestasi : b.total_poin - a.total_poin;
       });
-      rakitanKlasemen.forEach((item, idx) => item.peringkat = idx + 1);
-      setPapanPrestasi(rakitanKlasemen);
+      
+      const klasemenAktif = rakitanKlasemen;
+      klasemenAktif.forEach((item, idx) => item.peringkat = idx + 1);
+      setPapanPrestasi(klasemenAktif);
       
       const rawGaleri = resRawGaleri.data || [];
       const approvedGaleri: GaleriInovasiItem[] = rawGaleri.filter(item => isLolosKurasi(item.status_validasi || item.status || item.status_kurasi)).map(karya => {
@@ -245,7 +274,7 @@ export default function DashboardSekolah() {
     } catch (err) { console.error("PENA Harvester Error:", err); } finally { setLoading(false); }
   };
 
-  useEffect(() => { memuatSeluruhData(); }, [profile, filterKategori]);
+  useEffect(() => { memuatSeluruhData(); }, [profile, filterKategori, pilihKategoriPrestasi, pilihJenisPrestasi]);
 
   const handleReaksi = async (karyaId: string, jenis: 'LIKE' | 'DISLIKE') => {
     if (!profile?.id) return alert("Sesi tidak valid.");
@@ -449,7 +478,7 @@ export default function DashboardSekolah() {
   return (
     <div className="space-y-8 animate-fade-in pb-16 font-sans select-none max-w-7xl mx-auto w-full relative text-slate-900 dark:text-slate-100">
       
-      {/* 🌟 WATERMARK LOGO SEKOLAH DINAMIS (DI LAPISAN PALING BAWAH) */}
+      {/* 🌟 WATERMARK LOGO SEKOLAH */}
       {liveProfile?.avatar_url && (
         <div className="fixed inset-0 lg:pl-72 pointer-events-none z-0 flex items-center justify-center overflow-hidden p-8">
           <img 
@@ -460,7 +489,7 @@ export default function DashboardSekolah() {
         </div>
       )}
 
-      {/* HEADER & PROFIL SEKOLAH (VERSI KOMPAK) */}
+      {/* HEADER & PROFIL SEKOLAH (TETAP TAMPIL DI ATAS) */}
       <div className="relative z-10 bg-linear-to-r from-white via-indigo-50 to-fuchsia-50 border-4 border-black shadow-neo rounded-3xl p-6 sm:p-8 mb-6 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 dark:bg-[#061030]/80 dark:border-2 dark:border-cyan-500/30 dark:shadow-[0_4px_20px_rgba(6,182,212,0.15)] overflow-hidden transition-all hover:-translate-y-1 hover:shadow-neo-md">
         <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl pointer-events-none -z-10 dark:bg-cyan-500/10"></div>
         
@@ -487,7 +516,7 @@ export default function DashboardSekolah() {
         </button>
       </div>
       
-      {/* INFO STATISTIK SEKOLAH */}
+      {/* INFO STATISTIK SEKOLAH (TETAP TAMPIL DI ATAS) */}
       <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
         <div className="p-6 sm:p-8 rounded-3xl transition-all duration-300 hover:-translate-y-1 hover:shadow-neo-md bg-linear-to-br from-blue-50 to-cyan-50 border-4 border-black shadow-neo dark:bg-[#061030]/80 dark:border-2 dark:border-blue-500/30 dark:shadow-[0_4px_20px_rgba(59,130,246,0.1)] h-full flex flex-col justify-between">
           <div className="space-y-4">
@@ -526,20 +555,6 @@ export default function DashboardSekolah() {
                 </div>
              </div>
           </div>
-
-          <div className="mt-6 pt-4 border-t-2 border-black/10 dark:border-slate-800/50">
-            <p className="text-[10px] font-mono font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">🚀 Unggahan Karya Terbaru Sekolah</p>
-            {karyaTerbaruSekolah ? (
-              <div className="bg-blue-50 border-2 border-black rounded-xl p-3 shadow-sm dark:bg-slate-800/50 dark:border-slate-700">
-                <p className="text-xs font-black text-blue-700 dark:text-cyan-400 truncate">{karyaTerbaruSekolah.judul}</p>
-                <p className="text-[10px] text-slate-600 dark:text-slate-300 line-clamp-1 mt-0.5 italic">"{karyaTerbaruSekolah.deskripsi}"</p>
-              </div>
-            ) : (
-              <div className="bg-slate-50 border-2 border-dashed border-black/20 rounded-xl p-3 dark:bg-slate-900/40 dark:border-slate-800">
-                <p className="text-[10px] text-slate-500 font-bold italic text-center">Belum ada karya inovasi yang diunggah.</p>
-              </div>
-            )}
-          </div>
         </div>
 
         <div 
@@ -568,8 +583,51 @@ export default function DashboardSekolah() {
         </div>
       </div>
 
+      {/* 🌟 NAVIGASI TAB MENU FITUR DI BAWAH STATISTIK */}
+      <div className="relative z-10 flex gap-2 p-2 rounded-2xl overflow-x-auto font-mono text-xs transition-all bg-white border-4 border-black shadow-neo dark:bg-slate-900/80 dark:border-2 dark:border-slate-800 dark:shadow-none mt-8 mb-4">
+        <button onClick={() => setActiveTab('KLASEMEN')} className={`flex-1 min-w-45 py-3.5 px-4 rounded-xl font-black transition-all cursor-pointer flex items-center justify-center gap-2 border-2 ${activeTab === 'KLASEMEN' ? 'bg-orange-400 text-black border-black shadow-neo-md -translate-y-1 dark:bg-blue-600 dark:text-white dark:border-transparent dark:shadow-lg dark:shadow-blue-600/30 dark:translate-y-0' : 'bg-transparent border-transparent text-slate-600 hover:text-black dark:text-slate-400 dark:hover:text-white'}`}>🏆 Papan Prestasi</button>
+        
+        <button onClick={() => setActiveTab('MANTAP_SHARE')} className={`flex-1 min-w-45 py-3.5 px-4 rounded-xl font-black transition-all cursor-pointer flex items-center justify-center gap-2 border-2 ${activeTab === 'MANTAP_SHARE' ? 'bg-orange-400 text-black border-black shadow-neo-md -translate-y-1 dark:bg-blue-600 dark:text-white dark:border-transparent dark:shadow-lg dark:shadow-blue-600/30 dark:translate-y-0' : 'bg-transparent border-transparent text-slate-600 hover:text-black dark:text-slate-400 dark:hover:text-white'}`}>💡 MANTAP Share</button>
+        
+        <button onClick={() => setActiveTab('ANALITIK')} className={`flex-1 min-w-50 py-3.5 px-4 rounded-xl font-black transition-all cursor-pointer flex items-center justify-center gap-2 border-2 ${activeTab === 'ANALITIK' ? 'bg-orange-400 text-black border-black shadow-neo-md -translate-y-1 dark:bg-blue-600 dark:text-white dark:border-transparent dark:shadow-lg dark:shadow-blue-600/30 dark:translate-y-0' : 'bg-transparent border-transparent text-slate-600 hover:text-black dark:text-slate-400 dark:hover:text-white'}`}>📊 Pusat Analitik Nilai</button>
+      </div>
+
+      {/* 🌟 RENDER KONDISIONAL BERDASARKAN TAB AKTIF */}
+      
+      {activeTab === 'KLASEMEN' && (
+        <div id="klasemen" className="animate-fade-in relative z-10">
+          <PapanKlasemen 
+            filterKategori={filterKategori} 
+            setFilterKategori={setFilterKategori}
+            pilihKategoriPrestasi={pilihKategoriPrestasi}
+            setPilihKategoriPrestasi={setPilihKategoriPrestasi}
+            pilihJenisPrestasi={pilihJenisPrestasi}
+            setPilihJenisPrestasi={setPilihJenisPrestasi}
+            papanDataUtuh={papanPrestasi} 
+          />
+        </div>
+      )}
+
+      {activeTab === 'MANTAP_SHARE' && (
+        <div id="mantap" className="animate-fade-in relative z-10">
+          <GaleriInovasi 
+            galeriDitampilkan={galeriDitampilkan} galeriTotal={galeriTerfilter.length}
+            tampilSemuaInovasi={tampilSemuaInovasi} setTampilSemuaInovasi={setTampilSemuaInovasi}
+            renderKaryaInovasiCard={renderKaryaInovasiCard}
+            kategoriShare={kategoriShare} setKategoriShare={setKategoriShare}
+          />
+        </div>
+      )}
+
+      {activeTab === 'ANALITIK' && (
+        <div id="analitik" className="animate-fade-in relative z-10">
+          <ManajemenNilai />
+        </div>
+      )}
+
+      {/* MODAL EDIT PROFIL (Hanya muncul jika isEditing bernilai true dari tombol di header) */}
       {isEditing && (
-        <div className="relative z-10">
+        <div className="relative z-50">
           <FormEditSekolah 
             formNamaSekolah={formNamaSekolah} setFormNamaSekolah={setFormNamaSekolah}
             formKepsek={formKepsek} setFormKepsek={setFormKepsek}
@@ -586,25 +644,7 @@ export default function DashboardSekolah() {
         </div>
       )}
 
-      {/* JANGKAR 1: KLASEMEN */}
-      <div id="klasemen" className="scroll-mt-24 relative z-10">
-        <PapanKlasemen 
-          filterKategori={filterKategori} 
-          setFilterKategori={setFilterKategori}
-          papanDataUtuh={papanPrestasi} 
-        />
-      </div>
-
-      {/* JANGKAR 2: MANTAP SHARE */}
-      <div id="mantap" className="scroll-mt-24 relative z-10">
-        <GaleriInovasi 
-          galeriDitampilkan={galeriDitampilkan} galeriTotal={galeriTerfilter.length}
-          tampilSemuaInovasi={tampilSemuaInovasi} setTampilSemuaInovasi={setTampilSemuaInovasi}
-          renderKaryaInovasiCard={renderKaryaInovasiCard}
-          kategoriShare={kategoriShare} setKategoriShare={setKategoriShare}
-        />
-      </div>
-
+      {/* MODAL DETAIL PRESTASI (Hanya muncul jika diklik dari Grafik Prestasi) */}
       {showDetailPrestasi && (
         <div className="relative z-50">
           <ModalDetailPrestasi 

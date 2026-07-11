@@ -11,14 +11,12 @@ export interface KlasemenItem {
   trofi: number;
   pts: number;
   tka_score: number;
-  // 👈 Tambahan atribut wilayah
   cabang_dinas?: string;
   kabupaten_kota?: string;
 }
 
 export interface PraktikBaik {
   id: string; user_id: string; sekolah_id: string; judul: string; deskripsi: string; jenis_media: string; media_url: string; status_validasi: string; created_at: string; nama_sekolah?: string; npsn?: string;
-  // 👈 Tambahan atribut MANTAP Share
   kategori_program?: string;
   capaian_hasil?: string;
   tanggal_pelaksanaan?: string;
@@ -40,10 +38,30 @@ const DATA_WILAYAH = {
   "Cabang Dinas Wilayah XII": ["Kabupaten Pemalang", "Kabupaten Pekalongan", "Kabupaten Batang", "Kota Pekalongan"]
 };
 
+// 🎯 OPSI DROPDOWN
+const OPSI_KATEGORI_PRESTASI = [
+  "Semua", "Akademik", "Non Akademik", "Olahraga", "Seni",
+  "Keagamaan", "Pramuka", "PMR", "Paskibra", "Teknologi",
+  "Kewirausahaan", "Lingkungan", "Guru", "Kepala Sekolah", "Sekolah"
+];
+
+const OPSI_JENIS_PRESTASI = [
+  "Semua", "OSN", "OPSI", "O2SN", "POPDA", "POPPROV",
+  "POPNAS", "GSI", "FLS3N", "FIKSI", "LDBI", "NSDC",
+  "KSM", "MTQ", "Adiwiyata", "Sekolah Sehat", "GTK Award",
+  "Guru Berprestasi", "Kepala Sekolah Berprestasi", "Kejurkab", "Kejurprov"
+];
+
 interface TabShowcaseProps {
   filterKategori: 'SEMUA' | 'LOMBA' | 'LULUSAN' | 'TKA';
   setFilterKategori: (val: 'SEMUA' | 'LOMBA' | 'LULUSAN' | 'TKA') => void;
-  papanDataUtuh: KlasemenItem[]; // 👈 Sekarang menerima data utuh dari induk
+  // 🌟 PROPS BARU DARI INDUK
+  pilihKategoriPrestasi: string;
+  setPilihKategoriPrestasi: (val: string) => void;
+  pilihJenisPrestasi: string;
+  setPilihJenisPrestasi: (val: string) => void;
+  
+  papanDataUtuh: KlasemenItem[];
   tampilSemuaSekolah: boolean;
   setTampilSemuaSekolah: (val: boolean) => void;
   inovasiDitampilkan: PraktikBaik[];
@@ -55,6 +73,8 @@ interface TabShowcaseProps {
 
 export default function TabShowcase({
   filterKategori, setFilterKategori,
+  pilihKategoriPrestasi, setPilihKategoriPrestasi,
+  pilihJenisPrestasi, setPilihJenisPrestasi,
   papanDataUtuh, tampilSemuaSekolah, setTampilSemuaSekolah,
   inovasiDitampilkan, inovasiTotal, tampilSemuaInovasi, setTampilSemuaInovasi,
   renderKaryaPengawasCard
@@ -65,7 +85,7 @@ export default function TabShowcase({
   const [pilihCabdin, setPilihCabdin] = useState('');
   const [pilihKabKota, setPilihKabKota] = useState('');
 
-  // 🧠 LOGIKA PENYARINGAN CERDAS
+  // 🧠 LOGIKA PENYARINGAN CERDAS (Hanya memproses Wilayah)
   let dataTerfilter = [...(papanDataUtuh || [])];
 
   if (tingkatWilayah === 'CABDIN' && pilihCabdin) {
@@ -92,11 +112,41 @@ export default function TabShowcase({
             <h2 className="text-xl font-black text-amber-400 font-mono flex items-center gap-2">🏆 PAPAN KLASEMEN BINAAN</h2>
             <p className="text-xs text-slate-400 mt-1">Peringkat poin klasemen tertinggi & nilai TKA sekolah binaan Anda.</p>
           </div>
-          <div className="flex bg-slate-950 p-1.5 rounded-xl border border-slate-800 text-xs font-mono font-bold">
-            <button onClick={() => setFilterKategori('SEMUA')} className={`px-4 py-2 rounded-lg transition-colors cursor-pointer ${filterKategori === 'SEMUA' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-amber-400'}`}>SEMUA</button>
-            <button onClick={() => setFilterKategori('LOMBA')} className={`px-4 py-2 rounded-lg transition-colors cursor-pointer ${filterKategori === 'LOMBA' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-amber-400'}`}>LOMBA</button>
-            <button onClick={() => setFilterKategori('LULUSAN')} className={`px-4 py-2 rounded-lg transition-colors cursor-pointer ${filterKategori === 'LULUSAN' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-amber-400'}`}>LULUSAN</button>
-            <button onClick={() => setFilterKategori('TKA')} className={`px-4 py-2 rounded-lg transition-colors cursor-pointer ${filterKategori === 'TKA' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-cyan-400'}`}>TKA</button>
+          
+          {/* 🌟 FILTER GABUNGAN: SUMBER, KATEGORI, JENIS */}
+          <div className="flex flex-col md:flex-row gap-3 w-full xl:w-auto">
+            <select
+              value={filterKategori}
+              onChange={(e) => setFilterKategori(e.target.value as 'SEMUA' | 'LOMBA' | 'LULUSAN' | 'TKA')}
+              className="p-2 text-xs rounded-xl border-2 font-bold cursor-pointer outline-none bg-amber-500/20 border-amber-500 text-white shadow-sm"
+            >
+              <option value="SEMUA">Semua Sumber</option>
+              <option value="LOMBA">Lomba</option>
+              <option value="LULUSAN">Lulusan</option>
+              <option value="TKA">TKA</option>
+            </select>
+
+            <div className={`flex gap-3 transition-opacity duration-300 ${(filterKategori === "TKA" || filterKategori === "LULUSAN") ? "opacity-40 pointer-events-none" : "opacity-100"}`}>
+              <select
+                value={pilihKategoriPrestasi}
+                onChange={(e) => setPilihKategoriPrestasi(e.target.value)}
+                className="p-2 text-xs rounded-xl border border-slate-700 font-bold cursor-pointer outline-none bg-slate-900 text-white focus:border-cyan-500 shadow-sm"
+              >
+                {OPSI_KATEGORI_PRESTASI.map((kat) => (
+                  <option key={kat} value={kat}>{kat}</option>
+                ))}
+              </select>
+
+              <select
+                value={pilihJenisPrestasi}
+                onChange={(e) => setPilihJenisPrestasi(e.target.value)}
+                className="p-2 text-xs rounded-xl border border-slate-700 font-bold cursor-pointer outline-none bg-slate-900 text-white focus:border-cyan-500 shadow-sm"
+              >
+                {OPSI_JENIS_PRESTASI.map((jenis) => (
+                  <option key={jenis} value={jenis}>{jenis}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 

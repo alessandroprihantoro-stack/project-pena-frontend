@@ -9,7 +9,7 @@ import { supabase } from '../../supabaseClient';
 import dashboardPena from '../../assets/dashboard_pena.png'; 
 import bannerPena from '../../assets/banner_pena.png'; 
 
-// 🚀 IMPORT KE-5 KOMPONEN ANAK KITA (Sekolah Binaan DIHAPUS DARI DASHBOARD UTAMA)
+// 🚀 IMPORT KE-5 KOMPONEN ANAK KITA
 import TabProfilPengawas from './components/TabProfilPengawas';
 import TabShowcase from './components/TabShowcase';
 import TabValidasiPraktik from './components/TabValidasi'; 
@@ -19,13 +19,10 @@ import TabBiodataPengawas from './TabBiodataPengawas';
 interface PrestasiAjuan { id: string; sekolah_id: string; user_id: string; nama_siswa_atau_kegiatan: string; jenis_prestasi: string; jalur?: string; juara: string; tahun: string; poin: number; bukti_sertifikat: string; status_validasi: string; created_at: string; nama_sekolah?: string; logo_url?: string | null; npsn?: string; kategori?: string; jenis?: string; nama_prestasi?: string;}
 interface PraktikBaik { id: string; user_id: string; sekolah_id: string; judul: string; deskripsi: string; jenis_media: string; media_url: string; status_validasi: string; created_at: string; nama_sekolah?: string; npsn?: string;}
 
-// 👈 Interface MasterSekolah ditambah atribut wilayah
 interface MasterSekolah { id: string; npsn: string; nama_sekolah: string; nama_kepala_sekolah?: string; logo_url?: string | null; cabang_dinas?: string; kabupaten_kota?: string; }
-
 interface Reaksi { id: string; praktik_baik_id: string; user_id: string; jenis: 'LIKE' | 'DISLIKE'; }
 interface Komentar { id: string; praktik_baik_id: string; user_id: string; komentar: string; created_at: string; profiles?: { nama_lengkap: string; avatar_url: string }; }
 
-// 🌟 PERBAIKAN 1: Mengganti 'SEKOLAH_BINAAN' menjadi 'BIODATA'
 type TabKomando = 'SHOWCASE' | 'BIODATA' | 'VALIDASI_PRAKTIK' | 'PRESTASI' | 'PROFIL';
 
 const panenKepalaSekolah = (targetNpsn: string, targetId: string, allSeks: any[], allBinaan: any[], allProfs: any[]) => {
@@ -58,6 +55,11 @@ export default function DashboardPengawas() {
   const [expandedKaryaId, setExpandedKaryaId] = useState<string | null>(null);
 
   const [filterKategori, setFilterKategori] = useState<'SEMUA' | 'LOMBA' | 'LULUSAN' | 'TKA'>('SEMUA');
+  
+  // 🌟 STATE BARU UNTUK FILTER KATEGORI & JENIS
+  const [pilihKategoriPrestasi, setPilihKategoriPrestasi] = useState("Semua");
+  const [pilihJenisPrestasi, setPilihJenisPrestasi] = useState("Semua");
+
   const [tampilSemuaSekolah, setTampilSemuaSekolah] = useState(false);
   const [tampilSemuaInovasi, setTampilSemuaInovasi] = useState(false);
 
@@ -206,7 +208,7 @@ export default function DashboardPengawas() {
     fetchInteraksi();
   };
 
-  useEffect(() => { fetchSemuaDataMaster(); }, [profile]);
+  useEffect(() => { fetchSemuaDataMaster(); }, [profile, filterKategori, pilihKategoriPrestasi, pilihJenisPrestasi]); // Trigger re-fetch jika filter berubah
 
   const handleReviewBukti = (url?: string | null) => {
     if (!url) { alert("Tautan karya tidak terdeteksi."); return; }
@@ -247,12 +249,45 @@ export default function DashboardPengawas() {
   const prestasiMenunggu = listPrestasi.filter(p => p.status_validasi === 'MENUNGGU');
   let prestasiTerfilter = listPrestasi.filter(p => p.status_validasi === 'DISETUJUI');
 
+  // 🌟 LOGIKA PENYARINGAN SUPER CERDAS (Diterapkan di Pengawas)
   if (filterKategori === 'LOMBA') {
-    prestasiTerfilter = prestasiTerfilter.filter(pr => { const val = String(pr.jalur || pr.jenis_prestasi || '').toUpperCase(); return val.includes('LOMBA') || ['OSN', 'O2SN', 'FLS3N', 'KOSN', 'LDI', 'FIKSI', 'OPSI'].includes(val); });
+    prestasiTerfilter = prestasiTerfilter.filter(pr => { 
+      const val = String(pr.jalur || pr.kategori || pr.jenis_prestasi || pr.jenis || '').toUpperCase(); 
+      return val.includes('LOMBA') || 
+             ['OSN', 'O2SN', 'FLS3N', 'KOSN', 'LDI', 'FIKSI', 'OPSI', 'POPDA', 'POPPROV', 'POPNAS', 'GSI', 'NSDC', 'LDBI', 'KSM', 'MTQ'].some(k => val.includes(k)); 
+    });
   } else if (filterKategori === 'LULUSAN') {
-    prestasiTerfilter = prestasiTerfilter.filter(pr => { const val = String(pr.jalur || pr.jenis_prestasi || '').toUpperCase(); return val.includes('LULUSAN') || val.includes('KELULUSAN') || ['SNBP', 'SNBT', 'MANDIRI', 'KEDINASAN'].includes(val); });
+    prestasiTerfilter = prestasiTerfilter.filter(pr => { const val = String(pr.jalur || pr.kategori || pr.jenis_prestasi || pr.jenis || '').toUpperCase(); return val.includes('LULUSAN') || val.includes('KELULUSAN') || ['SNBP', 'SNBT', 'MANDIRI', 'KEDINASAN'].includes(val); });
   } else if (filterKategori === 'TKA') {
     prestasiTerfilter = prestasiTerfilter.filter(pr => { const val = String(pr.jalur || pr.kategori || pr.jenis_prestasi || pr.jenis || pr.nama_prestasi || '').toUpperCase(); return val.includes('TKA') || val.includes('AKADEMIK') || val.includes('NILAI'); });
+  }
+
+  // Filter Tambahan Kategori (Lebih Cerdas & Pemaaf)
+  if ((filterKategori === 'SEMUA' || filterKategori === 'LOMBA') && pilihKategoriPrestasi !== "Semua") {
+      const keywordKategori = pilihKategoriPrestasi.toLowerCase().trim();
+      prestasiTerfilter = prestasiTerfilter.filter(pr => {
+          const val = String(pr.kategori_prestasi || pr.kategori_lomba || pr.kategori || pr.jalur || pr.bidang || pr.jenis_prestasi || pr.jenis || pr.nama_kegiatan || pr.nama_prestasi || '').toLowerCase();
+          
+          const mapOlahraga = ['popda', 'o2sn', 'popnas', 'popprov', 'gsi', 'silat', 'taekwondo', 'atletik', 'renang', 'karate', 'volly', 'basket'];
+          const mapSeni = ['fls3n', 'seni', 'musik', 'tari', 'aktris', 'teater', 'vokal'];
+          const mapAkademik = ['osn', 'opsi', 'ksm', 'olimpiade', 'karya tulis', 'akademik'];
+          
+          let isMatch = val.includes(keywordKategori);
+          if (keywordKategori === 'olahraga' && mapOlahraga.some(m => val.includes(m))) isMatch = true;
+          if (keywordKategori === 'seni' && mapSeni.some(m => val.includes(m))) isMatch = true;
+          if (keywordKategori === 'akademik' && mapAkademik.some(m => val.includes(m))) isMatch = true;
+
+          return isMatch;
+      });
+  }
+
+  // Filter Tambahan Jenis Prestasi
+  if ((filterKategori === 'SEMUA' || filterKategori === 'LOMBA') && pilihJenisPrestasi !== "Semua") {
+      const keywordJenis = pilihJenisPrestasi.toLowerCase().trim();
+      prestasiTerfilter = prestasiTerfilter.filter(pr => {
+          const val = String(pr.jenis_prestasi || pr.nama_prestasi || pr.nama_lomba || pr.jenis || pr.nama_kegiatan || pr.jalur || '').toLowerCase();
+          return val.includes(keywordJenis);
+      });
   }
 
   const mapKlasemen = listSekolahMaster.reduce((acc, sek) => {
@@ -301,7 +336,6 @@ export default function DashboardPengawas() {
   });
 
   const sortedKlasemen = Object.values(mapKlasemen)
-    .filter(k => filterKategori === 'TKA' ? k.tka_score > 0 || listSekolahMaster.some(s => String(s.npsn).trim() === k.npsn) : (k.trofi > 0 || k.pts > 0 || listSekolahMaster.some(s => String(s.npsn).trim() === k.npsn)))
     .sort((a, b) => {
       if (filterKategori === 'TKA') return b.tka_score - a.tka_score; 
       if (filterKategori === 'SEMUA') {
@@ -496,7 +530,7 @@ export default function DashboardPengawas() {
         </div>
       </div>
 
-      {/* 🌟 PERBAIKAN 2: NAVIGASI TAB (Sekolah Binaan Diganti Jadi Biodata & Berkas) */}
+      {/* NAVIGASI TAB */}
       <div className="flex gap-2 p-2 rounded-2xl overflow-x-auto font-mono text-xs transition-all bg-white border-4 border-black shadow-neo dark:bg-slate-900/80 dark:border-2 dark:border-slate-800 dark:shadow-none">
         <button onClick={() => setActiveTab('SHOWCASE')} className={`flex-1 min-w-45 py-3.5 px-4 rounded-xl font-black transition-all cursor-pointer flex items-center justify-center gap-2 border-2 ${activeTab === 'SHOWCASE' ? 'bg-yellow-400 text-black border-black shadow-neo-md -translate-y-1 dark:bg-blue-600 dark:text-white dark:border-transparent dark:shadow-lg dark:shadow-blue-600/30 dark:translate-y-0' : 'bg-transparent border-transparent text-slate-600 hover:text-black hover:border-black/20 dark:text-slate-400 dark:hover:text-white dark:hover:border-transparent'}`}>🏆 Dasbor Papan</button>
         
@@ -506,10 +540,14 @@ export default function DashboardPengawas() {
         <button onClick={() => setActiveTab('PRESTASI')} className={`flex-1 min-w-45 py-3.5 px-4 rounded-xl font-black transition-all cursor-pointer flex items-center justify-center gap-2 border-2 ${activeTab === 'PRESTASI' ? 'bg-yellow-400 text-black border-black shadow-neo-md -translate-y-1 dark:bg-blue-600 dark:text-white dark:border-transparent dark:translate-y-0' : 'bg-transparent border-transparent text-slate-600 hover:text-black hover:border-black/20 dark:text-slate-400 dark:hover:text-white dark:hover:border-transparent'}`}>🎖️ Validasi Prestasi {prestasiMenunggu.length > 0 && <span className="px-1.5 py-0.2 bg-amber-500 text-black border border-black dark:border-none rounded-full text-[10px] animate-pulse">{prestasiMenunggu.length}</span>}</button>
       </div>
 
-      {/* 🌟 PERBAIKAN 3: RENDER KE-5 KOMPONEN ANAK SECARA BERSIH DAN ELEGAN */}
+      {/* RENDER KE-5 KOMPONEN ANAK */}
       {activeTab === 'SHOWCASE' && (
         <TabShowcase 
           filterKategori={filterKategori} setFilterKategori={setFilterKategori}
+          // 🌟 MELEMPARKAN STATE FILTER BARU KE TAB SHOWCASE
+          pilihKategoriPrestasi={pilihKategoriPrestasi} setPilihKategoriPrestasi={setPilihKategoriPrestasi}
+          pilihJenisPrestasi={pilihJenisPrestasi} setPilihJenisPrestasi={setPilihJenisPrestasi}
+          
           papanDataUtuh={sortedKlasemen} 
           tampilSemuaSekolah={tampilSemuaSekolah} setTampilSemuaSekolah={setTampilSemuaSekolah}
           inovasiDitampilkan={inovasiDitampilkan} inovasiTotal={inovasiTerurut.length}
@@ -518,7 +556,6 @@ export default function DashboardPengawas() {
         />
       )}
 
-      {/* Sekolah Binaan telah digantikan seutuhnya oleh TabBiodataPengawas */}
       {activeTab === 'BIODATA' && (
         <TabBiodataPengawas profile={profile} />
       )}
