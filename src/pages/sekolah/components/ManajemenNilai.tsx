@@ -15,7 +15,14 @@ interface AnalitikSiswa {
   rekomendasiTka: string;
   rekomendasiProdi: string;
   statusAman: boolean;
+  semuaMapel: Record<string, number>;
 }
+
+const DAFTAR_MAPEL = [
+  "AGAMA", "PANCASILA", "B_INDONESIA", "MATEMATIKA", "B_INGGRIS", "PJOK", 
+  "INFORMATIKA", "SEJARAH", "SENI_BUDAYA", "IPA_TERPADU", "IPS_TERPADU", 
+  "FISIKA", "KIMIA", "BIOLOGI", "SOSIOLOGI", "EKONOMI", "GEOGRAFI", "MUATAN_LOKAL", "MATEMATIKA_LANJUT"
+];
 
 export default function ManajemenNilai() {
   const { profile } = useAuth();
@@ -28,9 +35,14 @@ export default function ManajemenNilai() {
   
   const [dbSiswaList, setDbSiswaList] = useState<AnalitikSiswa[]>([]);
   const [isLoadingAnalitik, setIsLoadingAnalitik] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [rawNilaiList, setRawNilaiList] = useState<any[]>([]); 
+  const [selectedSiswa, setSelectedSiswa] = useState<AnalitikSiswa | null>(null); 
+  const [kategoriTop10, setKategoriTop10] = useState<string>('RATA-RATA'); 
 
   const handleDownloadTemplate = () => {
-    // 🌟 PERBAIKAN: Menambahkan kolom NILAI_TKA di akhir
     const header = [
       "NISN", "NAMA_SISWA", "KELAS", "SEMESTER", "AGAMA", "PANCASILA", "B_INDONESIA", 
       "MATEMATIKA", "B_INGGRIS", "PJOK", "INFORMATIKA", "SEJARAH", "SENI_BUDAYA", 
@@ -38,7 +50,6 @@ export default function ManajemenNilai() {
       "EKONOMI", "GEOGRAFI", "MUATAN_LOKAL", "MATEMATIKA_LANJUT", "NILAI_TKA"
     ];
     
-    // 🌟 PERBAIKAN: Menambahkan contoh nilai TKA (misal: 88)
     const contohData = [
       "0012345678", "Budi Santoso", "X.1", "1", 
       85, 88, 80, 90, 85, 89, 90, 82, 92, 82, 84, "", "", "", "", "", "", 85, "", 88
@@ -95,12 +106,7 @@ export default function ManajemenNilai() {
       }
 
       let berhasilSiswa = 0; let berhasilNilai = 0;
-      // 🌟 PERBAIKAN: Menambahkan NILAI_TKA agar ikut tersimpan ke database
-      const mapelList = [
-        "AGAMA", "PANCASILA", "B_INDONESIA", "MATEMATIKA", "B_INGGRIS", "PJOK", 
-        "INFORMATIKA", "SEJARAH", "SENI_BUDAYA", "IPA_TERPADU", "IPS_TERPADU", 
-        "FISIKA", "KIMIA", "BIOLOGI", "SOSIOLOGI", "EKONOMI", "GEOGRAFI", "MUATAN_LOKAL", "MATEMATIKA_LANJUT", "NILAI_TKA"
-      ];
+      const mapelList = [...DAFTAR_MAPEL, "NILAI_TKA"];
 
       for (const row of dataPreview) {
          const nisn = String(row['NISN'] || '').trim();
@@ -151,111 +157,200 @@ export default function ManajemenNilai() {
     }
   };
 
-  useEffect(() => {
-    const fetchAnalitikSiswa = async () => {
-      if (!profile?.id) return;
-      setIsLoadingAnalitik(true);
-      
-      try {
-        const { data: prof } = await supabase.from('profiles').select('nomor_induk').eq('id', profile.id).single();
-        const npsnSekolah = prof?.nomor_induk;
-        if (!npsnSekolah) {
-          setIsLoadingAnalitik(false);
-          return;
-        }
-  
-        const { data: siswaData } = await supabase.from('master_siswa').select('*').eq('npsn', npsnSekolah);
-        const { data: nilaiData } = await supabase.from('riwayat_nilai').select('*').eq('npsn', npsnSekolah);
-  
-        if (!siswaData || !nilaiData) {
-          setIsLoadingAnalitik(false);
-          return;
-        }
-  
-        const hasilAnalitik: AnalitikSiswa[] = siswaData.map(siswa => {
-          const nilaiSiswaIni = nilaiData.filter(n => n.siswa_id === siswa.id);
-          
-          if (nilaiSiswaIni.length === 0) {
-            return { id: siswa.id, nisn: siswa.nisn, nama: siswa.nama_lengkap, kelas_terakhir: '-', rataRataKeseluruhan: 0, mapelTerkuat: [], rekomendasiTka: 'Data Tidak Cukup', rekomendasiProdi: '-', statusAman: false };
-          }
-  
-          const kelasTerakhir = nilaiSiswaIni.reduce((prev, current) => (prev.semester > current.semester) ? prev : current).kelas;
-          
-          // 🌟 PERBAIKAN: Hitung rata-rata tanpa memasukkan NILAI_TKA agar rata-rata rapor murni
-          const nilaiRaporMurni = nilaiSiswaIni.filter(n => n.mata_pelajaran !== 'NILAI_TKA');
-          const totalNilai = nilaiRaporMurni.reduce((sum, n) => sum + Number(n.nilai), 0);
-          const rataRataKeseluruhan = nilaiRaporMurni.length > 0 ? Number((totalNilai / nilaiRaporMurni.length).toFixed(2)) : 0;
-  
-          const mapelAgg: Record<string, { total: number; count: number }> = {};
-          nilaiRaporMurni.forEach(n => {
-            if (!mapelAgg[n.mata_pelajaran]) mapelAgg[n.mata_pelajaran] = { total: 0, count: 0 };
-            mapelAgg[n.mata_pelajaran].total += Number(n.nilai);
-            mapelAgg[n.mata_pelajaran].count += 1;
-          });
-  
-          const mapelAverages = Object.entries(mapelAgg).map(([mapel, stats]) => ({
-            mapel,
-            nilai: Number((stats.total / stats.count).toFixed(2))
-          }));
-  
-          mapelAverages.sort((a, b) => b.nilai - a.nilai);
-          const mapelTerkuat = mapelAverages.slice(0, 2);
-  
-          const rekomendasiTka: string[] = [];
-          const rekomendasiProdi: string[] = [];
-          const namaMapelTerkuat = mapelTerkuat.map(m => m.mapel);
-  
-          if (namaMapelTerkuat.includes('BIOLOGI') || namaMapelTerkuat.includes('KIMIA')) {
-            rekomendasiTka.push('Biologi / Kimia'); rekomendasiProdi.push('Kedokteran, Farmasi, Keperawatan');
-          }
-          if (namaMapelTerkuat.includes('FISIKA') || namaMapelTerkuat.includes('MATEMATIKA_LANJUT') || namaMapelTerkuat.includes('MATEMATIKA')) {
-            rekomendasiTka.push('Fisika / MTK Lanjut'); rekomendasiProdi.push('Teknik, Arsitektur, Ilmu Komputer');
-          }
-          if (namaMapelTerkuat.includes('SOSIOLOGI') || namaMapelTerkuat.includes('EKONOMI')) {
-            rekomendasiTka.push('Sosiologi / Ekonomi'); rekomendasiProdi.push('Hukum, Manajemen, Akuntansi, Psikologi');
-          }
-          if (namaMapelTerkuat.includes('GEOGRAFI') || namaMapelTerkuat.includes('SEJARAH')) {
-            rekomendasiTka.push('Geografi / Sejarah'); rekomendasiProdi.push('Hubungan Internasional, Ilmu Politik, Sastra');
-          }
-          if (namaMapelTerkuat.includes('SENI_BUDAYA')) {
-            rekomendasiTka.push('Portofolio Seni'); rekomendasiProdi.push('DKV, Seni Rupa, Desain Interior');
-          }
-  
-          if (rekomendasiTka.length === 0) {
-            rekomendasiTka.push(mapelTerkuat[0]?.mapel || 'Sesuai Minat');
-            rekomendasiProdi.push('Pendidikan, Ilmu Komunikasi');
-          }
-  
-          return {
-            id: siswa.id,
-            nisn: siswa.nisn,
-            nama: siswa.nama_lengkap,
-            kelas_terakhir: kelasTerakhir,
-            rataRataKeseluruhan,
-            mapelTerkuat,
-            rekomendasiTka: rekomendasiTka.join(' atau '),
-            rekomendasiProdi: rekomendasiProdi.join(' / '),
-            statusAman: rataRataKeseluruhan >= 85
-          };
-        });
-  
-        hasilAnalitik.sort((a, b) => b.rataRataKeseluruhan - a.rataRataKeseluruhan);
-        setDbSiswaList(hasilAnalitik);
-  
-      } catch (error) {
-        console.error("Gagal fetch analitik:", error);
-      } finally {
+  // 🌟 MEMISAHKAN FUNGSI FETCH AGAR BISA DIPANGGIL SETELAH HAPUS DATA
+  const fetchAnalitikSiswa = async () => {
+    if (!profile?.id) return;
+    setIsLoadingAnalitik(true);
+    
+    try {
+      const { data: prof } = await supabase.from('profiles').select('nomor_induk').eq('id', profile.id).single();
+      const npsnSekolah = prof?.nomor_induk;
+      if (!npsnSekolah) {
         setIsLoadingAnalitik(false);
+        return;
       }
-    };
 
+      const { data: siswaData } = await supabase.from('master_siswa').select('*').eq('npsn', npsnSekolah);
+      const { data: nilaiData } = await supabase.from('riwayat_nilai').select('*').eq('npsn', npsnSekolah);
+
+      if (!siswaData || !nilaiData) {
+        setIsLoadingAnalitik(false);
+        return;
+      }
+
+      setRawNilaiList(nilaiData);
+
+      const hasilAnalitik: AnalitikSiswa[] = siswaData.map(siswa => {
+        const nilaiSiswaIni = nilaiData.filter(n => n.siswa_id === siswa.id);
+        
+        if (nilaiSiswaIni.length === 0) {
+          return { id: siswa.id, nisn: siswa.nisn, nama: siswa.nama_lengkap, kelas_terakhir: '-', rataRataKeseluruhan: 0, mapelTerkuat: [], rekomendasiTka: 'Data Tidak Cukup', rekomendasiProdi: '-', statusAman: false, semuaMapel: {} };
+        }
+
+        const kelasTerakhir = nilaiSiswaIni.reduce((prev, current) => (prev.semester > current.semester) ? prev : current).kelas;
+        
+        const nilaiRaporMurni = nilaiSiswaIni.filter(n => n.mata_pelajaran !== 'NILAI_TKA');
+        const totalNilai = nilaiRaporMurni.reduce((sum, n) => sum + Number(n.nilai), 0);
+        const rataRataKeseluruhan = nilaiRaporMurni.length > 0 ? Number((totalNilai / nilaiRaporMurni.length).toFixed(2)) : 0;
+
+        const mapelAgg: Record<string, { total: number; count: number }> = {};
+        nilaiRaporMurni.forEach(n => {
+          if (!mapelAgg[n.mata_pelajaran]) mapelAgg[n.mata_pelajaran] = { total: 0, count: 0 };
+          mapelAgg[n.mata_pelajaran].total += Number(n.nilai);
+          mapelAgg[n.mata_pelajaran].count += 1;
+        });
+
+        const semuaMapelRecord: Record<string, number> = {};
+        const mapelAverages = Object.entries(mapelAgg).map(([mapel, stats]) => {
+          const avg = Number((stats.total / stats.count).toFixed(2));
+          semuaMapelRecord[mapel] = avg;
+          return { mapel, nilai: avg };
+        });
+
+        mapelAverages.sort((a, b) => b.nilai - a.nilai);
+        const mapelTerkuat = mapelAverages.slice(0, 2);
+
+        const rekomendasiTka: string[] = [];
+        const rekomendasiProdi: string[] = [];
+        const namaMapelTerkuat = mapelTerkuat.map(m => m.mapel);
+
+        if (namaMapelTerkuat.includes('BIOLOGI') || namaMapelTerkuat.includes('KIMIA')) {
+          rekomendasiTka.push('Biologi / Kimia'); rekomendasiProdi.push('Kedokteran, Farmasi, Keperawatan');
+        }
+        if (namaMapelTerkuat.includes('FISIKA') || namaMapelTerkuat.includes('MATEMATIKA_LANJUT') || namaMapelTerkuat.includes('MATEMATIKA')) {
+          rekomendasiTka.push('Fisika / MTK Lanjut'); rekomendasiProdi.push('Teknik, Arsitektur, Ilmu Komputer');
+        }
+        if (namaMapelTerkuat.includes('SOSIOLOGI') || namaMapelTerkuat.includes('EKONOMI')) {
+          rekomendasiTka.push('Sosiologi / Ekonomi'); rekomendasiProdi.push('Hukum, Manajemen, Akuntansi, Psikologi');
+        }
+        if (namaMapelTerkuat.includes('GEOGRAFI') || namaMapelTerkuat.includes('SEJARAH')) {
+          rekomendasiTka.push('Geografi / Sejarah'); rekomendasiProdi.push('Hubungan Internasional, Ilmu Politik, Sastra');
+        }
+        if (namaMapelTerkuat.includes('SENI_BUDAYA')) {
+          rekomendasiTka.push('Portofolio Seni'); rekomendasiProdi.push('DKV, Seni Rupa, Desain Interior');
+        }
+
+        if (rekomendasiTka.length === 0) {
+          rekomendasiTka.push(mapelTerkuat[0]?.mapel || 'Sesuai Minat');
+          rekomendasiProdi.push('Pendidikan, Ilmu Komunikasi');
+        }
+
+        return {
+          id: siswa.id,
+          nisn: siswa.nisn,
+          nama: siswa.nama_lengkap,
+          kelas_terakhir: kelasTerakhir,
+          rataRataKeseluruhan,
+          mapelTerkuat,
+          rekomendasiTka: rekomendasiTka.join(' atau '),
+          rekomendasiProdi: rekomendasiProdi.join(' / '),
+          statusAman: rataRataKeseluruhan >= 85,
+          semuaMapel: semuaMapelRecord
+        };
+      });
+
+      hasilAnalitik.sort((a, b) => b.rataRataKeseluruhan - a.rataRataKeseluruhan);
+      setDbSiswaList(hasilAnalitik);
+
+    } catch (error) {
+      console.error("Gagal fetch analitik:", error);
+    } finally {
+      setIsLoadingAnalitik(false);
+    }
+  };
+
+  useEffect(() => {
     if (activeView === 'ANALITIK') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchAnalitikSiswa();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeView, profile?.id]);
 
+  // 🌟 LOGIKA HAPUS DATA 1 SISWA (Dari Modal)
+  const handleDeleteSiswa = async (idSiswa: string, namaSiswa: string) => {
+    if (!window.confirm(`🚨 PERINGATAN! 🚨\n\nAnda yakin ingin menghapus SELURUH data dan riwayat nilai untuk siswa: ${namaSiswa}?\n\nData yang dihapus tidak dapat dikembalikan.`)) return;
+
+    setIsDeleting(true);
+    try {
+      // 1. Hapus riwayat nilai terlebih dahulu (mencegah error relasi constraint)
+      await supabase.from('riwayat_nilai').delete().eq('siswa_id', idSiswa);
+      // 2. Hapus identitas siswa dari master data
+      await supabase.from('master_siswa').delete().eq('id', idSiswa);
+
+      alert(`✅ Seluruh data siswa ${namaSiswa} berhasil dihapus permanen.`);
+      setSelectedSiswa(null); // Tutup modal
+      fetchAnalitikSiswa(); // Segarkan tabel analitik
+    } catch (error) {
+      alert("❌ Gagal menghapus data siswa.");
+      console.error(error);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // 🌟 LOGIKA HAPUS SELURUH DATA KELAS / SEKOLAH
+  const handleDeleteSemuaData = async () => {
+    if (!window.confirm(`🚨 PERINGATAN FATAL! 🚨\n\nAnda yakin ingin MENGOSONGKAN SELURUH data siswa dan nilai di akun ini?\n\nTindakan ini akan menghapus semua rekam jejak secara permanen.`)) return;
+    
+    // Konfirmasi ganda untuk keamanan ekstra
+    const konfirmasiKedua = window.prompt(`Ketik "HAPUS" untuk mengonfirmasi pengosongan data secara permanen:`);
+    if (konfirmasiKedua !== 'HAPUS') {
+      alert("Proses pengosongan data dibatalkan.");
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      const { data: prof } = await supabase.from('profiles').select('nomor_induk').eq('id', profile?.id).single();
+      const npsnSekolah = prof?.nomor_induk;
+
+      if (!npsnSekolah) throw new Error("NPSN tidak ditemukan.");
+
+      // Hapus berurutan: Nilai dulu, baru Siswa
+      await supabase.from('riwayat_nilai').delete().eq('npsn', npsnSekolah);
+      await supabase.from('master_siswa').delete().eq('npsn', npsnSekolah);
+
+      alert("✅ Seluruh data siswa dan nilai berhasil dikosongkan.");
+      setDbSiswaList([]);
+      setRawNilaiList([]);
+    } catch (error) {
+      alert("❌ Gagal mengosongkan data.");
+      console.error(error);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const getTop10Siswa = () => {
+    return [...dbSiswaList].sort((a, b) => {
+      if (kategoriTop10 === 'RATA-RATA') {
+        return b.rataRataKeseluruhan - a.rataRataKeseluruhan;
+      }
+      return (b.semuaMapel[kategoriTop10] || 0) - (a.semuaMapel[kategoriTop10] || 0);
+    }).slice(0, 10);
+  };
+
+  const getTrendData = () => {
+    if (!selectedSiswa) return [];
+    const siswaNilai = rawNilaiList.filter(n => n.siswa_id === selectedSiswa.id && n.mata_pelajaran !== 'NILAI_TKA');
+    const semesterMap = new Map();
+    
+    siswaNilai.forEach(n => {
+       if(!semesterMap.has(n.semester)) semesterMap.set(n.semester, { total: 0, count: 0, kelas: n.kelas });
+       const stat = semesterMap.get(n.semester);
+       stat.total += Number(n.nilai);
+       stat.count += 1;
+    });
+
+    return Array.from(semesterMap.keys()).sort().map(sem => {
+       const stat = semesterMap.get(sem);
+       return { semester: sem, kelas: stat.kelas, rata: (stat.total/stat.count).toFixed(2) };
+    });
+  };
+
   return (
-    <div className="bg-white dark:bg-slate-900 border-4 border-black shadow-neo rounded-3xl p-6 sm:p-8 animate-fade-in">
+    <div className="bg-white dark:bg-slate-900 border-4 border-black shadow-neo rounded-3xl p-6 sm:p-8 animate-fade-in relative">
       <div className="border-b-4 border-black/10 pb-4 mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-xl font-black uppercase tracking-widest text-blue-600 dark:text-cyan-400 flex items-center gap-2">
@@ -303,11 +398,9 @@ export default function ManajemenNilai() {
 
             <div className="mt-6 max-w-2xl text-center bg-blue-50 dark:bg-slate-800/50 p-4 rounded-xl border-2 border-blue-200 dark:border-slate-700">
               <p className="text-xs font-bold text-blue-800 dark:text-cyan-300 leading-relaxed flex justify-center items-center gap-1.5">
-                {/* 🌟 PERBAIKAN: Ubah tahun menjadi 2027 */}
                 <span>🚀</span> Mengawal Tren Nilai Menuju SNBP 2027
               </p>
               <p className="text-[11px] font-mono text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
-                {/* 🌟 PERBAIKAN: Ubah narasi menjadi semester 1-5 dan tahun 2027 */}
                 TKA kini jadi bagian wajib dalam SNBP 2027. Gunakan template standar untuk memetakan nilai dari semester 1 sampai 5. Sistem akan mengkalkulasi tren akademik dan merekomendasikan mata uji TKA (validator nilai rapor) yang paling sesuai.
               </p>
             </div>
@@ -357,13 +450,42 @@ export default function ManajemenNilai() {
       {activeView === 'ANALITIK' && (
         <div className="animate-fade-in">
           
-          <div className="bg-slate-900 text-white border-4 border-black p-6 rounded-2xl shadow-neo mb-8 relative overflow-hidden">
+          <div className="bg-slate-900 text-white border-4 border-black p-6 rounded-2xl shadow-neo mb-6 relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
              <div className="absolute right-0 top-0 opacity-10 text-9xl pointer-events-none transform translate-x-4 -translate-y-8">🚀</div>
-             {/* 🌟 PERBAIKAN: Ubah tahun menjadi 2027 */}
-             <h3 className="text-xl font-black uppercase tracking-widest text-yellow-400 mb-2">Simulasi Rasionalisasi SNBP 2027</h3>
-             <p className="text-xs text-slate-300 font-mono leading-relaxed max-w-3xl">
-                Sistem membaca rekam jejak nilai rapor siswa di database. sistem akan merekomendasikan mata uji TKA yang relevan dengan rapor sebagai validator utama kelolosan.
-             </p>
+             <div className="relative z-10 flex-1">
+               <h3 className="text-xl font-black uppercase tracking-widest text-yellow-400 mb-2">Simulasi Rasionalisasi SNBP 2027</h3>
+               <p className="text-xs text-slate-300 font-mono leading-relaxed max-w-xl">
+                 Sistem membaca rekam jejak nilai rapor siswa di database. Klik pada baris siswa untuk melihat grafik tren semester.
+               </p>
+             </div>
+             
+             {/* 🌟 FILTER KATEGORI & TOMBOL HAPUS SEMUA */}
+             <div className="relative z-10 flex flex-col sm:flex-row items-center gap-3">
+               <div className="bg-slate-800 border-2 border-slate-700 p-2 rounded-xl flex items-center gap-3">
+                 <label className="text-[10px] font-mono font-bold text-cyan-400 uppercase tracking-widest pl-2">Top 10 :</label>
+                 <select 
+                   value={kategoriTop10} 
+                   onChange={e => setKategoriTop10(e.target.value)}
+                   className="bg-slate-950 text-white border border-slate-600 rounded-lg p-2 text-xs font-bold outline-none focus:border-cyan-400 cursor-pointer"
+                 >
+                   <option value="RATA-RATA">🏆 Rata-Rata Keseluruhan</option>
+                   {DAFTAR_MAPEL.map(mapel => (
+                     <option key={mapel} value={mapel}>📘 {mapel.replace('_', ' ')}</option>
+                   ))}
+                 </select>
+               </div>
+
+               {dbSiswaList.length > 0 && (
+                 <button 
+                   onClick={handleDeleteSemuaData}
+                   disabled={isDeleting}
+                   className="px-4 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-mono text-xs font-black transition-colors cursor-pointer border-2 border-rose-800 shadow-md"
+                   title="Hapus seluruh data siswa di sekolah ini"
+                 >
+                   {isDeleting ? '⏳' : '🗑️ Kosongkan Data'}
+                 </button>
+               )}
+             </div>
           </div>
 
           {isLoadingAnalitik ? (
@@ -379,24 +501,33 @@ export default function ManajemenNilai() {
               <table className="w-full text-left text-sm whitespace-nowrap">
                 <thead className="bg-blue-600 text-white border-b-4 border-black">
                   <tr>
-                    <th className="p-4 font-black text-[10px] uppercase tracking-wider text-center w-16">No</th>
+                    <th className="p-4 font-black text-[10px] uppercase tracking-wider text-center w-16">Rank</th>
                     <th className="p-4 font-black text-[10px] uppercase tracking-wider">Identitas Siswa</th>
-                    <th className="p-4 font-black text-[10px] uppercase tracking-wider text-center border-l-2 border-black/20">Rata-Rata Rapor</th>
+                    <th className="p-4 font-black text-[10px] uppercase tracking-wider text-center border-l-2 border-black/20">Nilai ({kategoriTop10.replace('_', ' ')})</th>
                     <th className="p-4 font-black text-[10px] uppercase tracking-wider border-l-2 border-black/20">Mapel Terkuat (Rapor)</th>
                     <th className="p-4 font-black text-[10px] uppercase tracking-wider border-l-2 border-black/20">Saran TKA & Jurusan</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y-2 divide-black/10 dark:divide-slate-700/50">
-                  {dbSiswaList.map((siswa, idx) => (
-                    <tr key={siswa.id} className="bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                      <td className="p-4 text-center font-mono font-bold text-slate-500">{idx + 1}</td>
+                  {getTop10Siswa().map((siswa, idx) => {
+                    const nilaiTampil = kategoriTop10 === 'RATA-RATA' ? siswa.rataRataKeseluruhan : (siswa.semuaMapel[kategoriTop10] || 0);
+                    return (
+                    <tr 
+                      key={siswa.id} 
+                      onClick={() => setSelectedSiswa(siswa)}
+                      className="bg-white dark:bg-slate-900 hover:bg-yellow-50 dark:hover:bg-slate-800 transition-colors cursor-pointer group"
+                      title="Klik untuk melihat detail & tren nilai"
+                    >
+                      <td className="p-4 text-center font-mono font-black text-slate-500 group-hover:text-blue-600 dark:group-hover:text-cyan-400">
+                        {idx === 0 ? '🥇 1' : idx === 1 ? '🥈 2' : idx === 2 ? '🥉 3' : idx + 1}
+                      </td>
                       <td className="p-4">
-                        <div className="font-bold text-slate-900 dark:text-white">{siswa.nama}</div>
+                        <div className="font-bold text-slate-900 dark:text-white group-hover:text-blue-700 dark:group-hover:text-cyan-300 transition-colors">{siswa.nama}</div>
                         <div className="text-[10px] font-mono text-slate-500">NISN: {siswa.nisn} • Kelas: {siswa.kelas_terakhir}</div>
                       </td>
                       <td className="p-4 text-center border-l-2 border-black/5 dark:border-slate-800/50">
-                        <span className={`inline-flex items-center justify-center px-3 py-1 rounded-xl text-xs font-mono font-black border-2 ${siswa.statusAman ? 'bg-emerald-100 text-emerald-800 border-emerald-400 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-500/30' : 'bg-rose-100 text-rose-800 border-rose-400 dark:bg-rose-500/20 dark:text-rose-400 dark:border-rose-500/30'}`}>
-                          {siswa.rataRataKeseluruhan}
+                        <span className={`inline-flex items-center justify-center px-3 py-1 rounded-xl text-xs font-mono font-black border-2 ${nilaiTampil >= 85 ? 'bg-emerald-100 text-emerald-800 border-emerald-400 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-500/30' : 'bg-rose-100 text-rose-800 border-rose-400 dark:bg-rose-500/20 dark:text-rose-400 dark:border-rose-500/30'}`}>
+                          {nilaiTampil}
                         </span>
                       </td>
                       <td className="p-4 border-l-2 border-black/5 dark:border-slate-800/50">
@@ -413,11 +544,58 @@ export default function ManajemenNilai() {
                         <div className="text-[10px] text-slate-600 dark:text-slate-400 max-w-xs truncate">Prospek: {siswa.rekomendasiProdi}</div>
                       </td>
                     </tr>
-                  ))}
+                  )})}
                 </tbody>
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* 🌟 MODAL TREN NILAI SEMESTER (DENGAN TOMBOL HAPUS SISWA) */}
+      {selectedSiswa && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 border-4 border-black dark:border-slate-700 rounded-3xl p-6 max-w-lg w-full shadow-neo dark:shadow-2xl space-y-6">
+            <div className="flex justify-between items-start border-b-2 border-black/10 dark:border-slate-700 pb-4">
+              <div>
+                <h3 className="text-lg font-black text-blue-700 dark:text-cyan-400">{selectedSiswa.nama}</h3>
+                <p className="text-[10px] font-mono text-slate-500 font-bold uppercase mt-1">NISN: {selectedSiswa.nisn} • Rata-Rata Total: {selectedSiswa.rataRataKeseluruhan}</p>
+              </div>
+              <button onClick={() => setSelectedSiswa(null)} className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center font-bold cursor-pointer transition-colors">
+                ✕
+              </button>
+            </div>
+            
+            <div className="space-y-3">
+              <h4 className="text-[10px] font-black font-mono uppercase tracking-widest text-slate-700 dark:text-slate-300 border-l-4 border-yellow-400 pl-2">📈 Grafik Tren Semester</h4>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {getTrendData().map((tren, idx) => (
+                  <div key={idx} className="p-3 border-2 border-black/10 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-950/50 flex flex-col items-center justify-center gap-1 hover:border-blue-400 transition-colors">
+                    <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">SMT {tren.semester} / {tren.kelas}</span>
+                    <span className={`text-lg font-black ${Number(tren.rata) >= 85 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>{tren.rata}</span>
+                  </div>
+                ))}
+              </div>
+              {getTrendData().length === 0 && (
+                <div className="p-6 text-center text-xs font-mono text-slate-500 italic bg-slate-100 dark:bg-slate-800 rounded-xl">
+                  Data per semester tidak tersedia.
+                </div>
+              )}
+            </div>
+
+            <div className="pt-4 border-t-2 border-black/10 dark:border-slate-700 flex gap-3">
+               <button 
+                 onClick={() => handleDeleteSiswa(selectedSiswa.id, selectedSiswa.nama)}
+                 disabled={isDeleting}
+                 className="flex-1 py-3 rounded-xl bg-rose-100 text-rose-700 hover:bg-rose-200 dark:bg-rose-900/30 dark:text-rose-400 dark:hover:bg-rose-900/50 font-mono font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer border border-rose-300 dark:border-rose-800/50"
+               >
+                 {isDeleting ? 'Menghapus...' : '🗑️ Hapus Siswa'}
+               </button>
+               <button onClick={() => setSelectedSiswa(null)} className="flex-1 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-mono font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer border-2 border-black">
+                 Tutup Jendela
+               </button>
+            </div>
+          </div>
         </div>
       )}
 

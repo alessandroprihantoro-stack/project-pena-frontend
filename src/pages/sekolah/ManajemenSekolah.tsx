@@ -6,6 +6,8 @@ import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
 import PrestasiSekolah from './PrestasiSekolah';
 import InputTkaSekolah from './InputTkaSekolah'; 
+// 1. IMPORT FUNGSI KOMPRESI (Menyesuaikan letak relatif file)
+import { compressImage } from '../../utils/imageCompression';
 
 interface Prestasi { 
   id: string; 
@@ -81,6 +83,24 @@ export default function ManajemenSekolah() {
 
   const fetchPraktikBaik = async () => { if (!profile?.id) return; const { data } = await supabase.from('praktik_baik').select('*').eq('sekolah_id', profile.id).order('created_at', { ascending: false }); setListPraktik(data || []); };
   
+  // 2. FUNGSI HANDLER BARU UNTUK MEMISAHKAN KOMPRESI FOTO & VIDEO
+  const handleMediaChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setPbMediaFile(null);
+      return;
+    }
+
+    // Jika yang dipilih adalah foto, maka kita kompres
+    if (pbJenisMedia === 'FOTO') {
+      const compressedFile = await compressImage(file);
+      setPbMediaFile(compressedFile as File);
+    } else {
+      // Jika video, kita langsung masukkan tanpa kompresi
+      setPbMediaFile(file);
+    }
+  };
+
   const handleAddPraktikBaik = async (e: React.FormEvent) => {
     e.preventDefault(); 
     if (!profile?.id || !pbMediaFile) return alert("❌ Judul, Media, dan Deskripsi wajib diisi!"); 
@@ -252,7 +272,9 @@ export default function ManajemenSekolah() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <select value={pbJenisMedia} onChange={e=>setPbJenisMedia(e.target.value)} className="p-2.5 rounded-lg border-2 outline-none cursor-pointer bg-slate-50 border-black/20 text-black dark:bg-slate-900 dark:border-slate-700 dark:text-white"><option value="FOTO">🖼️ Foto / Gambar</option><option value="VIDEO">🎥 Video (Maks. 1 Menit)</option></select>
-                  <input type="file" required accept={pbJenisMedia === 'VIDEO' ? 'video/mp4,video/x-m4v,video/*' : 'image/jpeg,image/png,image/webp,image/*'} onChange={e=>e.target.files&&setPbMediaFile(e.target.files[0])} className="p-1.5 rounded-lg border-2 text-[10px] cursor-pointer bg-slate-50 border-black/20 text-slate-700 file:mr-2 file:py-1 file:px-2 file:rounded file:border file:bg-amber-200 file:text-black file:font-bold dark:bg-slate-900 dark:border-slate-700 dark:text-white dark:file:bg-slate-800 dark:file:text-amber-400" />
+                  
+                  {/* 3. UBAH onChange MENJADI handleMediaChange */}
+                  <input type="file" required accept={pbJenisMedia === 'VIDEO' ? 'video/mp4,video/x-m4v,video/*' : 'image/jpeg,image/png,image/webp,image/*'} onChange={handleMediaChange} className="p-1.5 rounded-lg border-2 text-[10px] cursor-pointer bg-slate-50 border-black/20 text-slate-700 file:mr-2 file:py-1 file:px-2 file:rounded file:border file:bg-amber-200 file:text-black file:font-bold dark:bg-slate-900 dark:border-slate-700 dark:text-white dark:file:bg-slate-800 dark:file:text-amber-400" />
                 </div>
               </div>
 
@@ -316,6 +338,7 @@ export default function ManajemenSekolah() {
                 <option value="2026/2027">Tahun 2026/2027</option>
                 <option value="2025/2026">Tahun 2025/2026</option>
               </select>
+              {/* NOTE: Untuk unggah Excel, tidak perlu dikompres, jadi dibiarkan seperti sedia kala */}
               <input type="file" required accept=".xlsx, .xls" onChange={e=>e.target.files&&setRaporFile(e.target.files[0])} className="w-full p-2 rounded-xl border-2 cursor-pointer bg-white border-black text-slate-700 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-2 file:border-black file:bg-emerald-300 file:text-black file:font-bold dark:bg-slate-950 dark:border-slate-800 dark:text-slate-300 dark:file:border-0 dark:file:bg-emerald-500/20 dark:file:text-emerald-300" />
               <button type="submit" disabled={formLoadingRapor} className="w-full py-3 font-black rounded-xl cursor-pointer transition-all disabled:opacity-50 border-2 uppercase tracking-widest bg-emerald-400 hover:bg-emerald-300 border-black text-black shadow-neo hover:-translate-y-1 active:translate-y-0 active:shadow-none dark:bg-emerald-500 dark:hover:bg-emerald-400 dark:border-transparent dark:text-slate-950 dark:shadow-none dark:hover:translate-y-0">Kirim Berkas Rapor</button>
             </form>
@@ -366,7 +389,7 @@ export default function ManajemenSekolah() {
                Input nilai rata-rata pencapaian siswa per mata pelajaran secara modular.
              </p>
           </div>
-          <InputTkaSekolah />
+          <inputtkasekolah />
         </div>
       )}
 

@@ -4,6 +4,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabaseClient';
+// 1. IMPORT FUNGSI KOMPRESI TERSENTRALISASI
+import { compressImage } from '../../utils/imageCompression';
 
 import logoPena from '../../assets/logo_pena.png';
 import logoJateng from '../../assets/logo_jateng.png';
@@ -42,63 +44,6 @@ export default function LogJurnalDiri() {
     return new Date(dateString).toLocaleDateString('id-ID', options);
   };
 
-  // 🌟 MESIN KOMPRESI GAMBAR NATIVE (Tanpa Library Tambahan)
-  // Akan memeras gambar yang terlalu besar (misal 5MB menjadi < 300KB) dengan kualitas 70%
-  const compressImage = (file: File): Promise<File> => {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target?.result as string;
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 1280; // Resolusi aman untuk dokumen
-          const MAX_HEIGHT = 1280;
-          let width = img.width;
-          let height = img.height;
-
-          // Kalkulasi rasio aspek agar tidak gepeng
-          if (width > height) {
-            if (width > MAX_WIDTH) {
-              height *= MAX_WIDTH / width;
-              width = MAX_WIDTH;
-            }
-          } else {
-            if (height > MAX_HEIGHT) {
-              width *= MAX_HEIGHT / height;
-              height = MAX_HEIGHT;
-            }
-          }
-
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx?.drawImage(img, 0, 0, width, height);
-
-          // Konversi kembali menjadi file JPEG terkompresi
-          canvas.toBlob(
-            (blob) => {
-              if (blob) {
-                const newFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpeg", {
-                  type: 'image/jpeg',
-                  lastModified: Date.now(),
-                });
-                resolve(newFile);
-              } else {
-                resolve(file); // Fallback jika gagal kompresi
-              }
-            },
-            'image/jpeg',
-            0.7 // Kualitas 70% (Sangat optimal untuk penghematan ruang)
-          );
-        };
-        img.onerror = () => resolve(file); // Fallback
-      };
-      reader.onerror = () => resolve(file); // Fallback
-    });
-  };
-
   const fetchJurnal = async () => {
     if (!profile?.id) return;
     
@@ -131,10 +76,10 @@ export default function LogJurnalDiri() {
       let publicUrl = '';
 
       if (jFileBukti) {
-        // 🌟 EKSEKUSI KOMPRESI GAMBAR SEBELUM UPLOAD
+        // 🌟 MENGGUNAKAN MESIN KOMPRESI TERSENTRALISASI 
         let fileToUpload = jFileBukti;
         if (jFileBukti.type.startsWith('image/')) {
-          fileToUpload = await compressImage(jFileBukti);
+          fileToUpload = await compressImage(jFileBukti) as File;
           console.log(`PENA Compressor: Memeras ukuran dari ${(jFileBukti.size / 1024).toFixed(1)} KB menjadi ${(fileToUpload.size / 1024).toFixed(1)} KB`);
         }
 
@@ -144,7 +89,7 @@ export default function LogJurnalDiri() {
 
         const { error: uploadError } = await supabase.storage
           .from('jurnal_foto')
-          .upload(filePath, fileToUpload, { // Menggunakan file hasil kompresi
+          .upload(filePath, fileToUpload, { 
             cacheControl: '3600',
             upsert: true 
           });

@@ -1,4 +1,6 @@
 import React from 'react';
+// 1. IMPORT FUNGSI KOMPRESI (Sesuaikan jumlah '../' dengan lokasi folder utils Anda)
+import { compressImage } from '../../../utils/imageCompression';
 
 // 🌟 STANDARDISASI UNOR (Untuk Filter Admin yang Akurat)
 const DAFTAR_UNOR_JATENG = [
@@ -40,6 +42,18 @@ export default function TabProfilPengawas({
   pJabatan, setPJabatan, pNipResmi, setPNipResmi, pGolongan, setPGolongan,
   setPFotoFile, handleUpdateProfil, profilLoading, nomorIndukSistem
 }: TabProfilPengawasProps) {
+
+  // 2. FUNGSI HANDLER BARU UNTUK MENGOMPRES FOTO PROFIL SEBELUM DISIMPAN KE STATE
+  const handleFotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const compressedFile = await compressImage(file);
+      setPFotoFile(compressedFile as File);
+    } else {
+      setPFotoFile(null);
+    }
+  };
+
   return (
     <div className="bg-slate-900/60 border border-slate-800 p-8 rounded-3xl space-y-6 max-w-3xl mx-auto shadow-2xl animate-fade-in">
       <div className="border-b border-slate-800 pb-4">
@@ -99,7 +113,8 @@ export default function TabProfilPengawas({
 
         <div>
           <label className="block font-mono text-slate-300 mb-1">Foto Profil / Avatar</label>
-          <input type="file" accept="image/*" onChange={e=>setPFotoFile(e.target.files?.[0] || null)} className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-cyan-500/10 file:text-cyan-400 hover:file:bg-cyan-500/20 cursor-pointer" />
+          {/* 3. UBAH onChange MENJADI handleFotoChange */}
+          <input type="file" accept="image/*" onChange={handleFotoChange} className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-cyan-500/10 file:text-cyan-400 hover:file:bg-cyan-500/20 cursor-pointer" />
         </div>
         
         <div className="pt-4">

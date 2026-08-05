@@ -1,4 +1,6 @@
 import React from "react";
+// 1. IMPORT FUNGSI KOMPRESI (Pastikan path folder utils ini sesuai dengan struktur Anda)
+import { compressImage } from "../../../utils/imageCompression";
 
 // Mendefinisikan interface agar komponen ini memahami tipe data yang dilempar dari Induk
 interface FormEditSekolahProps {
@@ -112,6 +114,19 @@ export default function FormEditSekolah({
     formCabdin && DATA_WILAYAH[formCabdin as keyof typeof DATA_WILAYAH]
       ? DATA_WILAYAH[formCabdin as keyof typeof DATA_WILAYAH]
       : [];
+
+  // 2. FUNGSI HANDLER BARU UNTUK KOMPRESI GAMBAR SEBELUM DI-SET KE STATE
+  const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Eksekusi kompresi secara background
+      const compressedFile = await compressImage(file);
+      // Lempar file hasil kompresi kembali ke komponen induk
+      setFormLogoFile(compressedFile as File);
+    } else {
+      setFormLogoFile(null);
+    }
+  };
 
   return (
     <form
@@ -258,10 +273,11 @@ export default function FormEditSekolah({
         <label className="block text-[10px] font-mono font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
           Ganti Berkas Logo Institusi (Opsional)
         </label>
+        {/* 3. UBAH onChange MENJADI handleLogoChange */}
         <input
           type="file"
           accept="image/*"
-          onChange={(e) => setFormLogoFile(e.target.files?.[0] || null)}
+          onChange={handleLogoChange}
           className="w-full text-xs cursor-pointer file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-2 file:border-black file:text-xs file:font-mono file:font-black file:bg-yellow-400 file:text-black dark:file:border-transparent dark:file:bg-slate-800 dark:file:text-cyan-400 text-slate-600 dark:text-slate-400"
         />
       </div>

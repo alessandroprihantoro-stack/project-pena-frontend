@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
 import { useAuth } from '../../context/AuthContext';
+// 1. IMPORT FUNGSI KOMPRESI (Sesuaikan path-nya jika berbeda)
+import { compressImage } from '../../utils/imageCompression';
 
 interface InformasiItem {
   id: string;
@@ -52,7 +54,26 @@ export default function KelolaPapanInformasi() {
     fetchSemuaInformasi();
   }, []);
 
-  // 2. Simpan Berita Baru ke Database (Lengkap dengan Upload Lampiran)
+  // 2. FUNGSI HANDLER BARU UNTUK DETEKSI & KOMPRESI FILE
+  const handleLampiranChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setLampiranFile(null);
+      return;
+    }
+
+    // Cek apakah file yang diunggah adalah gambar
+    if (file.type.startsWith('image/')) {
+      // Jika gambar, jalankan kompresi
+      const compressedFile = await compressImage(file);
+      setLampiranFile(compressedFile as File);
+    } else {
+      // Jika dokumen (PDF, DOC), biarkan file asli tanpa kompresi
+      setLampiranFile(file);
+    }
+  };
+
+  // 3. Simpan Berita Baru ke Database (Lengkap dengan Upload Lampiran)
   const handleSimpan = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile?.id) return alert("⚠️ Sesi Admin tidak valid!");
@@ -132,7 +153,7 @@ export default function KelolaPapanInformasi() {
     }
   };
 
-  // 3. Toggle Status Aktif / Non-Aktif (Kendali Siar Cepat)
+  // 4. Toggle Status Aktif / Non-Aktif (Kendali Siar Cepat)
   const handleToggleActive = async (id: string, currentStatus: boolean) => {
     try {
       const { error } = await supabase
@@ -150,7 +171,7 @@ export default function KelolaPapanInformasi() {
     }
   };
 
-  // 4. Hapus Berita
+  // 5. Hapus Berita
   const handleDelete = async (id: string, judulBerita: string) => {
     if (window.confirm(`🚨 PERINGATAN 🚨\n\nAnda yakin ingin menghapus permanen pengumuman "${judulBerita}"?`)) {
       try {
@@ -234,11 +255,12 @@ export default function KelolaPapanInformasi() {
               <label className="block text-[10px] font-mono uppercase tracking-wider text-blue-700 dark:text-cyan-400 font-black">
                 📎 Unggah Lampiran (Opsional)
               </label>
+              {/* 4. UBAH onChange MENJADI handleLampiranChange */}
               <input
                 id="fileLampiranInput"
                 type="file"
                 accept="image/*,.pdf,.doc,.docx"
-                onChange={e => setLampiranFile(e.target.files ? e.target.files[0] : null)}
+                onChange={handleLampiranChange}
                 className="w-full text-xs text-slate-500 dark:text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-[10px] file:font-black file:uppercase file:bg-blue-600 file:text-white hover:file:bg-blue-700 dark:file:bg-cyan-500 dark:file:text-slate-950 cursor-pointer"
               />
               <p className="text-[9px] text-slate-400 font-mono italic">

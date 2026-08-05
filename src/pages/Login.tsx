@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+// @ts-nocheck
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { supabase } from "../supabaseClient";
 
 import logoJateng from "../assets/logo_jateng.png";
 import logoPena from "../assets/logo_pena.png";
@@ -209,6 +210,15 @@ export default function Login() {
               >
                 <span className="text-base group-hover:scale-110 transition-transform">🌐</span>
                 <span>Masuk Portal Publik & Peringkat Mutu</span>
+              </Link>
+
+              {/* 🌟 TOMBOL BARU: GENERATOR LAPORAN TRIWULAN */}
+              <Link 
+                to="/generator-laporan"
+                className="w-full mt-2 py-3 px-4 bg-slate-900 border border-slate-700 hover:border-slate-500 hover:bg-slate-800 rounded-xl font-bold text-xs tracking-wide uppercase text-slate-300 hover:text-white transition-all flex items-center justify-center gap-2 group shadow-md cursor-pointer"
+              >
+                <span className="text-base group-hover:scale-110 transition-transform">📄</span> 
+                <span>Alat Bantu Generator Laporan</span> 
               </Link>
             </div>
 

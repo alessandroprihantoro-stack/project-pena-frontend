@@ -5,6 +5,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import Layout from "./components/Layout";
+import GeneratorLaporan from './pages/publik/GeneratorLaporan';
 
 // Import Halaman Admin & Publik
 import Login from "./pages/Login";
@@ -74,6 +75,7 @@ export default function App() {
           
           {/* 🌟 GERBANG PUBLIK (TANPA LOGIN): Papan Peringkat & Apresiasi Karya */}
           <Route path="/publik" element={<EtalasePublik />} />
+          <Route path="/generator-laporan" element={<GeneratorLaporan />} />
 
           {/* ================= ZONA UNIVERSAL (SEMUA AKUN TERVERIFIKASI) ================= */}
           {/* 🌟 CHECKPOINT PROTECTION: Ditambahkan CABDIN agar bisa baca pengumuman */}
