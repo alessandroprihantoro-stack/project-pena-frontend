@@ -38,7 +38,7 @@ const OPSI_APEL = ["KaCabDin", "Kasi SMA/SLB", "Seluruh Pengawas", "MKKS"];
 const OPSI_TINDAKAN = ["Pendampingan", "Supervisi", "Monitoring", "Sosialisasi", "Zoom", "Observasi Kinerja Kepala Sekolah", "Verifikasi", "Desk", "Workshop"];
 const OPSI_PROGRAM = ["OSN", "SPMB", "SPMI", "E-KSP", "RKT", "ARKAS", "O2SN", "FLS3N", "Program SMA Mantap", "Program Insersi Koperasi", "Program SBI", "ASTS", "ASAS", "ASAJ", "ASAT", "Pembelajaran Mendalam"];
 
-// MESIN CERDAS: FORMAT TANGGAL
+// MESIN CERDAS: FORMAT TANGGAL KE DD/MM/YYYY
 const formatExcelDate = (excelDate: string | number) => {
   if (!excelDate) return '-';
   const num = Number(excelDate);
@@ -55,34 +55,20 @@ const formatExcelDate = (excelDate: string | number) => {
   return str; 
 };
 
-// MESIN CERDAS: FILTER BULAN ANTI-GAGAL (Toleran Format US/UK/ID)
-const isDateInPeriodeSafe = (rawDateStr: string, tw: string) => {
-  if (!tw || !rawDateStr || rawDateStr === '-') return true;
-  const parts = rawDateStr.split(/[-/]/);
-  if (parts.length < 2) return true; 
-
-  let m ;
-  if (parts[0].length === 4) {
-      m = parseInt(parts[1], 10); // Format YYYY-MM-DD
-  } else {
-      const p0 = parseInt(parts[0], 10);
-      const p1 = parseInt(parts[1], 10);
-      if (p0 > 12) m = p1; // Pasti DD/MM/YYYY
-      else if (p1 > 12) m = p0; // Pasti MM/DD/YYYY
-      else {
-          const d = new Date(rawDateStr);
-          if (!isNaN(d.getTime())) m = d.getMonth() + 1; // Deteksi otomatis bawaan JS
-          else m = p1; // Fallback ke standar Indonesia (DD/MM/YYYY)
-      }
+// MESIN CERDAS: FILTER BULAN YANG SUDAH DI-FORMAT (SUPER AKURAT)
+const isDateInPeriode = (formattedDate: string, tw: string) => {
+  if (!tw || formattedDate === '-') return true;
+  
+  // Karena formattedDate PASTI DD/MM/YYYY dari fungsi formatExcelDate
+  const parts = formattedDate.split('/');
+  if (parts.length === 3) {
+    const month = parseInt(parts[1], 10);
+    if (tw === 'TW1') return month >= 1 && month <= 3;
+    if (tw === 'TW2') return month >= 4 && month <= 6;
+    if (tw === 'TW3') return month >= 7 && month <= 9;
+    if (tw === 'TW4') return month >= 10 && month <= 12;
   }
-
-  if (m >= 1 && m <= 12) {
-      if (tw === 'TW1') return m >= 1 && m <= 3;
-      if (tw === 'TW2') return m >= 4 && m <= 6;
-      if (tw === 'TW3') return m >= 7 && m <= 9;
-      if (tw === 'TW4') return m >= 10 && m <= 12;
-  }
-  return true; // Jika benar-benar gagal dideteksi, loloskan datanya (jangan dibuang)
+  return false; // Jika tidak cocok Triwulan, JANGAN diloloskan
 };
 
 export interface KegiatanUIState extends KegiatanBab2 {
@@ -100,7 +86,7 @@ export default function GeneratorLaporan() {
   const [nipPengawas, setNipPengawas] = useState<string>('');
   const [periode, setPeriode] = useState<string>('');
   const [tanggalCetak, setTanggalCetak] = useState<string>('');
-  const [tempatCetak, setTempatCetak] = useState<string>(''); // STATE BARU
+  const [tempatCetak, setTempatCetak] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
@@ -149,12 +135,12 @@ export default function GeneratorLaporan() {
         const rowStr = JSON.stringify(row).toLowerCase();
         
         if (rowStr.includes(pengawasTerpilih.nip) || rowStr.includes(namaPendek)) {
-           const rawTanggal = String(row[idxTanggal] || '');
-           
-           // FILTER ANTI-GAGAL
-           if (!isDateInPeriodeSafe(rawTanggal, periode)) continue;
-
+           // PERBAIKAN: Format tanggal TERLEBIH DAHULU sebelum difilter
            const parsedDate = idxTanggal !== -1 ? formatExcelDate(row[idxTanggal]) : '-';
+           
+           // PERBAIKAN: Filter menggunakan tanggal yang sudah di-format, dijamin presisi!
+           if (!isDateInPeriode(parsedDate, periode)) continue;
+
            const kegiatanStr = String(row[idxKegiatan] || '');
            if (kegiatanStr && kegiatanStr !== 'undefined' && kegiatanStr.toLowerCase() !== 'kegiatan') {
               let fotoUrl = '';
