@@ -221,6 +221,12 @@ export default function Login() {
                 <span>Alat Bantu Generator Laporan</span> 
               </Link>
             </div>
+            <Link 
+  to="/rekap-guru" 
+  className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm font-semibold text-slate-300 transition-all hover:bg-slate-800 hover:text-white"
+>
+  📊 REKAP KEBUTUHAN GURU
+</Link>
 
             <div className="pt-1 text-center"><span className="text-[10px] font-mono text-slate-500">Sistem PENA OS • Berlisensi Resmi Disdikbud</span></div>
           </div>

@@ -15,6 +15,7 @@ import PraktikBaik from "./pages/admin/PraktikBaik";
 import KelolaPengawas from "./pages/admin/KelolaPengawas";
 import KelolaSekolah from "./pages/admin/KelolaSekolah";
 import KelolaPapanInformasi from "./pages/admin/KelolaPapanInformasi";
+import RekapKebutuhanGuru from './pages/publik/RekapKebutuhanGuru';
 
 // Import Jantung Dasbor Utama
 import DashboardPengawas from "./pages/pengawas/DashboardPengawas";
@@ -76,6 +77,7 @@ export default function App() {
           {/* 🌟 GERBANG PUBLIK (TANPA LOGIN): Papan Peringkat & Apresiasi Karya */}
           <Route path="/publik" element={<EtalasePublik />} />
           <Route path="/generator-laporan" element={<GeneratorLaporan />} />
+          <Route path="/rekap-guru" element={<RekapKebutuhanGuru />} />
 
           {/* ================= ZONA UNIVERSAL (SEMUA AKUN TERVERIFIKASI) ================= */}
           {/* 🌟 CHECKPOINT PROTECTION: Ditambahkan CABDIN agar bisa baca pengumuman */}
