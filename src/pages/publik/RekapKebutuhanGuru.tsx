@@ -44,6 +44,9 @@ const RekapKebutuhanGuru = () => {
   const [filterStatus, setFilterStatus] = useState<string>(''); 
   const [filterSekolah, setFilterSekolah] = useState<string>('');
   const [viewDetailSekolah, setViewDetailSekolah] = useState<ProcessedData | null>(null);
+  
+  // State Pencarian Guru Mutasi
+  const [searchSurplusMapel, setSearchSurplusMapel] = useState<string>('');
 
   // State Editor
   const [editSekolah, setEditSekolah] = useState<string>('');
@@ -157,7 +160,27 @@ const RekapKebutuhanGuru = () => {
     fetchAllData();
   }, []);
 
-  // ================= FILTER TABEL & KOLOM CERDAS =================
+  // ================= PERHITUNGAN STATISTIK DASHBOARD =================
+  let totalKekurangan = 0;
+  let totalKelebihan = 0;
+  const statsByKab: Record<string, { kurang: number; lebih: number }> = {};
+
+  data.forEach(school => {
+    const kab = school.kabupaten || 'Lainnya';
+    if (!statsByKab[kab]) statsByKab[kab] = { kurang: 0, lebih: 0 };
+    
+    Object.values(school.mapel).forEach(m => {
+      totalKekurangan += m.kurang;
+      totalKelebihan += m.kelebihan;
+      statsByKab[kab].kurang += m.kurang;
+      statsByKab[kab].lebih += m.kelebihan;
+    });
+  });
+
+  const chartData = Object.entries(statsByKab).map(([kab, stats]) => ({ kab, ...stats }));
+  const maxChartValue = Math.max(...chartData.flatMap(d => [d.kurang, d.lebih]), 1) * 1.2;
+
+  // ================= FILTER TABEL UTAMA =================
   const listKabupaten = Array.from(new Set(data.map(d => d.kabupaten).filter(Boolean)));
   const listSekolahFilter = data.filter(d => filterKabupaten === '' || d.kabupaten === filterKabupaten).map(d => d.sekolah);
 
@@ -179,6 +202,8 @@ const RekapKebutuhanGuru = () => {
   const activeMapels = mapelList.filter(mapel => 
     filteredData.some(row => (row.mapel[mapel]?.kurang > 0 || row.mapel[mapel]?.kelebihan > 0))
   );
+
+  const matchedSurplusTeachers = allSurplusTeachers.filter(t => searchSurplusMapel === '' || t.bidangStudi === searchSurplusMapel);
 
   // ================= FUNGSI EDITOR & SIMPAN =================
   const handleSelectEditSekolah = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -223,7 +248,7 @@ const RekapKebutuhanGuru = () => {
     else { alert("Akses Ditolak! PIN salah."); setPasswordInput(''); }
   };
 
-  // ================= LOGIKA KALKULASI RENTANG JAM & BK =================
+  // ================= LOGIKA KALKULASI REVISI TERBARU (TARGET 30 & FALLBACK 24) =================
   const handleCalculation = (mapel: string, field: 'totalJam' | 'guruTersedia', value: string) => {
     const numVal = value === '' ? '' : parseInt(value);
     const currentMapel = editCalc[mapel];
@@ -232,54 +257,73 @@ const RekapKebutuhanGuru = () => {
     if (updatedMapel.totalJam !== '' && updatedMapel.guruTersedia !== '') {
       const T = Number(updatedMapel.totalJam);
       const G = Number(updatedMapel.guruTersedia);
-      
-      let minLoad, maxLoad;
-
-      // Deteksi otomatis apakah ini mapel Bimbingan Konseling
       const isBK = mapel.toLowerCase().includes('bimbingan') || mapel.toLowerCase().includes('konseling') || mapel.toLowerCase() === 'bk';
 
       if (isBK) {
-        minLoad = 150; // Minimal 150 Konseli
-        maxLoad = 180; // Maksimal 180 Konseli
-      } else {
-        minLoad = 30;  // Minimal 30 Jam
-        maxLoad = 40;  // Maksimal 40 Jam
-      }
+        // --- LOGIKA KHUSUS BK (Batas 5 sampai 8 Kelas) ---
+        const minLoad = 5; 
+        const maxLoad = 8; 
 
-      if (G === 0) {
-         // Jika belum ada guru sama sekali
-         updatedMapel.kurang = Math.ceil(T / maxLoad);
-         updatedMapel.kelebihan = 0;
-      } else {
-         const currentLoad = T / G;
-
-         if (currentLoad > maxLoad) {
-           // Kondisi Kurang Guru (Beban melebihi batas maksimal)
-           const idealTeachers = Math.ceil(T / maxLoad);
-           updatedMapel.kurang = idealTeachers - G;
+        if (G === 0) {
+           updatedMapel.kurang = Math.ceil(T / maxLoad);
            updatedMapel.kelebihan = 0;
-         } else if (currentLoad < minLoad) {
-           // Kondisi Kelebihan Guru (Beban kurang dari batas minimal)
-           let maxAllowedTeachers = Math.floor(T / minLoad);
-           
-           // Pastikan jika ada jam/siswa (T > 0), minimal harus ada 1 guru yang diizinkan
-           if (T > 0 && maxAllowedTeachers === 0) {
-             maxAllowedTeachers = 1;
-           }
-
-           if (G > maxAllowedTeachers) {
-             updatedMapel.kelebihan = G - maxAllowedTeachers;
-             updatedMapel.kurang = 0;
-           } else {
-             // Secara teknis aman karena jumlah guru tidak melebihi yang diizinkan
+        } else {
+           const currentLoad = T / G;
+           if (currentLoad > maxLoad) {
+             const idealTeachers = Math.ceil(T / maxLoad);
+             updatedMapel.kurang = idealTeachers - G;
              updatedMapel.kelebihan = 0;
+           } else if (currentLoad < minLoad) {
+             let maxAllowedTeachers = Math.floor(T / minLoad);
+             if (T > 0 && maxAllowedTeachers === 0) maxAllowedTeachers = 1;
+
+             if (G > maxAllowedTeachers) {
+               updatedMapel.kelebihan = G - maxAllowedTeachers;
+               updatedMapel.kurang = 0;
+             } else {
+               updatedMapel.kelebihan = 0;
+               updatedMapel.kurang = 0;
+             }
+           } else {
              updatedMapel.kurang = 0;
+             updatedMapel.kelebihan = 0;
            }
-         } else {
-           // AMAN: Beban berada tepat di antara rentang minimal dan maksimal
-           updatedMapel.kurang = 0;
+        }
+      } else {
+        // --- LOGIKA MAPEL UMUM (Target 30 Jam, Fallback 24 Jam, Maks 40 Jam) ---
+        const maxLoad = 40;
+        const minFallback = 24;
+
+        if (G === 0) {
+           updatedMapel.kurang = Math.ceil(T / maxLoad);
            updatedMapel.kelebihan = 0;
-         }
+        } else {
+           const currentLoad = T / G;
+           
+           if (currentLoad > maxLoad) {
+             // Kondisi Kurang: Rata-rata jam melewati batas maksimal (40)
+             const idealTeachers = Math.ceil(T / maxLoad);
+             updatedMapel.kurang = idealTeachers - G;
+             updatedMapel.kelebihan = 0;
+           } else if (currentLoad < minFallback) {
+             // Kondisi Lebih: Rata-rata jam jatuh di bawah standar nasional (24)
+             let maxAllowedTeachers = Math.floor(T / minFallback);
+             if (T > 0 && maxAllowedTeachers === 0) maxAllowedTeachers = 1; // Pastikan minimal ada 1 guru jika ada jam
+
+             if (G > maxAllowedTeachers) {
+               updatedMapel.kelebihan = G - maxAllowedTeachers;
+               updatedMapel.kurang = 0;
+             } else {
+               updatedMapel.kelebihan = 0;
+               updatedMapel.kurang = 0;
+             }
+           } else {
+             // KONDISI AMAN (Rata-rata berada di 24 - 40 Jam per guru)
+             // Meskipun target awal 30, jika rata-rata misal 26 (di atas 24), maka tetap dianggap AMAN.
+             updatedMapel.kurang = 0;
+             updatedMapel.kelebihan = 0;
+           }
+        }
       }
     } else {
       updatedMapel.kurang = 0;
@@ -300,25 +344,16 @@ const RekapKebutuhanGuru = () => {
 
   const handleSimpanData = async () => {
     if (!editFormData) return;
-    
     const targetSekolah = editSekolah === 'NEW' ? editFormData.sekolah.trim() : editSekolah;
-    
-    if (!targetSekolah || !editFormData.kabupaten) {
-      alert("⚠️ Nama Sekolah dan Kabupaten wajib diisi!");
-      return;
-    }
+    if (!targetSekolah || !editFormData.kabupaten) { alert("⚠️ Nama Sekolah dan Kabupaten wajib diisi!"); return; }
 
     setIsSaving(true);
 
     try {
       const kebutuhanPayload = mapelList.map(mapel => ({
-        sekolah: targetSekolah,
-        kabupaten: editFormData.kabupaten,
-        mapel: mapel,
-        kurang: editFormData.mapel[mapel]?.kurang || 0,
-        kelebihan: editFormData.mapel[mapel]?.kelebihan || 0,
-        total_jam: editFormData.mapel[mapel]?.totalJam || 0,
-        guru_ada: editFormData.mapel[mapel]?.guruAda || 0,
+        sekolah: targetSekolah, kabupaten: editFormData.kabupaten, mapel: mapel,
+        kurang: editFormData.mapel[mapel]?.kurang || 0, kelebihan: editFormData.mapel[mapel]?.kelebihan || 0,
+        total_jam: editFormData.mapel[mapel]?.totalJam || 0, guru_ada: editFormData.mapel[mapel]?.guruAda || 0,
         last_updated: new Date().toISOString()
       }));
 
@@ -337,7 +372,6 @@ const RekapKebutuhanGuru = () => {
 
       alert("🎉 Data instansi berhasil disimpan ke Database secara permanen!");
       window.location.reload(); 
-
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       alert("❌ Gagal menyimpan data: " + errorMessage);
@@ -369,7 +403,6 @@ const RekapKebutuhanGuru = () => {
   };
   const removeSurplusRow = (id: string | number) => setSurplusTeachers(surplusTeachers.filter(t => t.id !== id));
 
-  // Logika Khusus untuk Mengurutkan Kekurangan Guru di Modal View Detail
   const getSortedKekuranganMapels = (sekolahData: ProcessedData) => {
     return mapelList
       .filter(m => sekolahData.mapel[m]?.kurang > 0)
@@ -383,23 +416,98 @@ const RekapKebutuhanGuru = () => {
     <div className="p-8 min-h-screen bg-slate-900 text-slate-200 print:bg-white print:p-0 print:text-black relative">
       <div className="max-w-full mx-auto space-y-6">
         
-        {/* HEADER KHUSUS CETAK PDF UTAMA */}
         <div className={`hidden print:block text-center mb-8 pt-8 ${viewDetailSekolah ? 'print:hidden' : ''}`}>
           <h1 className="text-2xl font-bold uppercase">Laporan Rekapitulasi Kebutuhan Guru</h1>
           <hr className="mt-4 border-2 border-black" />
         </div>
 
-        {/* PANEL FILTER */}
-        <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl print:hidden">
-          <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
+        {/* ================= DASHBOARD & PUSAT PENCARIAN GURU ================= */}
+        <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl print:border-none print:shadow-none print:bg-transparent">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 border-b border-slate-700 print:border-black pb-4">
             <div>
-              <h1 className="text-2xl font-bold text-cyan-400 uppercase tracking-widest">Rekapitulasi Kebutuhan Guru</h1>
+              <h1 className="text-2xl font-bold text-cyan-400 print:text-black uppercase tracking-widest">Dashboard Distribusi Guru</h1>
+              <p className="text-sm text-slate-400 print:text-gray-600 mt-1">Pemetaan & Pusat Relokasi Guru Tingkat Menengah</p>
             </div>
-            <div className="flex items-center gap-2 bg-emerald-900/30 px-4 py-2 rounded-lg">
-              <span className="text-emerald-400 font-medium text-sm">Standar: 30-40 Jam (BK: 150-180 Siswa)</span>
+            <div className="mt-4 md:mt-0 flex items-center gap-2 bg-emerald-900/30 print:bg-transparent px-4 py-2 rounded-lg print:p-0">
+              <span className="text-emerald-400 print:text-black font-medium text-sm">Target Beban: 30 Jam (Nasional: 24 Jam)</span>
             </div>
           </div>
 
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-1 space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-slate-900/50 print:bg-white p-4 rounded-xl border border-amber-900/30 print:border-black text-center">
+                  <p className="text-xs font-bold text-slate-500 print:text-black uppercase mb-1">Total Kekurangan</p>
+                  <p className="text-3xl font-black text-amber-400 print:text-black">{totalKekurangan} <span className="text-sm font-medium">Guru</span></p>
+                </div>
+                <div className="bg-slate-900/50 print:bg-white p-4 rounded-xl border border-emerald-900/30 print:border-black text-center">
+                  <p className="text-xs font-bold text-slate-500 print:text-black uppercase mb-1">Total Kelebihan</p>
+                  <p className="text-3xl font-black text-emerald-400 print:text-black">{totalKelebihan} <span className="text-sm font-medium">Guru</span></p>
+                </div>
+              </div>
+
+              <div className="bg-slate-900/50 print:bg-transparent p-5 rounded-xl border border-slate-700 print:border-black h-64 flex flex-col justify-between">
+                <h3 className="text-sm font-bold text-slate-300 print:text-black uppercase mb-2 text-center">Grafik Pemetaan per Kabupaten</h3>
+                <div className="flex-1 flex items-end gap-2 sm:gap-6 justify-around border-b border-slate-700 print:border-black pb-2 pt-6">
+                  {chartData.map(d => (
+                    <div key={d.kab} className="flex flex-col items-center gap-2 w-full h-full justify-end">
+                      <div className="flex items-end gap-1 sm:gap-2 w-full justify-center h-full">
+                        <div className="relative group w-6 sm:w-10 bg-amber-500 print:bg-gray-400 rounded-t flex flex-col justify-end items-center" style={{ height: `${(d.kurang / maxChartValue) * 100}%`, minHeight: d.kurang>0 ? '10px' : '0' }}>
+                           <span className="absolute -top-5 text-[10px] font-bold text-amber-300 print:text-black">{d.kurang>0 ? d.kurang : ''}</span>
+                        </div>
+                        <div className="relative group w-6 sm:w-10 bg-emerald-500 print:bg-black rounded-t flex flex-col justify-end items-center" style={{ height: `${(d.lebih / maxChartValue) * 100}%`, minHeight: d.lebih>0 ? '10px' : '0' }}>
+                           <span className="absolute -top-5 text-[10px] font-bold text-emerald-300 print:text-black">{d.lebih>0 ? d.lebih : ''}</span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] sm:text-xs font-bold text-slate-400 print:text-black uppercase truncate max-w-full">{d.kab.substring(0,3)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-center gap-4 mt-3">
+                   <div className="flex items-center gap-1"><div className="w-3 h-3 bg-amber-500 print:bg-gray-400 rounded-sm"></div><span className="text-[10px] text-slate-400 print:text-black">Kurang</span></div>
+                   <div className="flex items-center gap-1"><div className="w-3 h-3 bg-emerald-500 print:bg-black rounded-sm"></div><span className="text-[10px] text-slate-400 print:text-black">Lebih</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div className="lg:col-span-2 bg-slate-900/80 p-5 rounded-xl border border-cyan-900/50 print:hidden flex flex-col h-full">
+              <h3 className="text-lg font-bold text-cyan-400 mb-2 border-b border-slate-700 pb-2 flex items-center gap-2">
+                🔍 Pusat Pencarian Guru (Mutasi)
+              </h3>
+              <p className="text-xs text-slate-400 mb-4">Pilih mata pelajaran di bawah ini untuk melihat daftar seluruh guru berlebih yang siap direlokasi.</p>
+              
+              <select className="w-full bg-slate-800 border border-slate-600 text-slate-200 rounded-lg px-4 py-2 mb-4 focus:border-cyan-500 outline-none" value={searchSurplusMapel} onChange={(e) => setSearchSurplusMapel(e.target.value)}>
+                <option value="">-- Tampilkan Semua Guru Berlebih --</option>
+                {mapelList.map(mapel => <option key={mapel} value={mapel}>{mapel}</option>)}
+              </select>
+
+              <div className="flex-1 overflow-y-auto pr-2" style={{ maxHeight: '250px' }}>
+                {matchedSurplusTeachers.length === 0 ? (
+                  <div className="h-full flex items-center justify-center border-2 border-dashed border-slate-700 rounded-lg p-6">
+                    <p className="text-slate-500 text-sm text-center">Tidak ada guru kelebihan yang terdata pada mata pelajaran ini.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {matchedSurplusTeachers.map((t, idx) => (
+                      <div key={idx} className="bg-slate-800 p-3 rounded-lg border border-slate-600 hover:border-emerald-500 transition-colors">
+                        <p className="font-bold text-white text-sm truncate">{t.nama}</p>
+                        <p className="text-xs text-slate-400 mb-2">{t.nip}</p>
+                        <div className="flex justify-between items-center text-[10px]">
+                           <span className="bg-cyan-900/50 text-cyan-300 px-2 py-0.5 rounded truncate max-w-[60%]">{t.sekolah}</span>
+                           <span className="bg-emerald-900/50 text-emerald-300 px-2 py-0.5 rounded font-bold">{t.bidangStudi}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ================= PANEL FILTER TABEL UTAMA ================= */}
+        <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl print:hidden mt-6">
+          <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">🛠️ Filter Tampilan Tabel Analisis</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <select className="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg px-4 py-2.5" value={filterKabupaten} onChange={(e) => { setFilterKabupaten(e.target.value); setFilterSekolah(''); }}>
               <option value="">Semua Kabupaten</option>
@@ -421,11 +529,11 @@ const RekapKebutuhanGuru = () => {
           </div>
         </div>
 
-        {/* TABEL UTAMA */}
+        {/* ================= TABEL UTAMA ================= */}
         <div className={`bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl overflow-hidden print:bg-white print:p-0 print:border-none print:shadow-none ${viewDetailSekolah ? 'print:hidden' : ''}`}>
           <div className="flex justify-between items-center mb-6 print:hidden">
             <h2 className="text-lg font-bold text-white uppercase">Tabel Rekapitulasi Data</h2>
-            <button onClick={handleExportPDF} className="bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg">📄 Cetak PDF Tabel</button>
+            <button onClick={handleExportPDF} className="bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-lg">📄 Cetak Laporan PDF</button>
           </div>
 
           <div className="overflow-x-auto rounded-lg border border-slate-700 print:border-black print:rounded-none">
@@ -468,7 +576,7 @@ const RekapKebutuhanGuru = () => {
                   </tr>
                 ))}
                 {filteredData.length === 0 && (
-                  <tr><td colSpan={activeMapels.length * 2 + 3} className="text-center py-8 text-slate-500 print:text-black">Tidak ada data. Semua mapel dalam kondisi AMAN atau tidak ada instansi yang cocok.</td></tr>
+                  <tr><td colSpan={activeMapels.length * 2 + 3} className="text-center py-8 text-slate-500 print:text-black">Tidak ada data instansi yang cocok dengan filter.</td></tr>
                 )}
               </tbody>
             </table>
@@ -497,7 +605,7 @@ const RekapKebutuhanGuru = () => {
                     const isCritical = data.kurang > 1;
                     const rataRata = data.guruAda > 0 ? (data.totalJam / data.guruAda).toFixed(1) : data.totalJam;
                     const isBK = m.toLowerCase().includes('bimbingan') || m.toLowerCase().includes('konseling') || m.toLowerCase() === 'bk';
-                    const labelSatuan = isBK ? 'Siswa' : 'Jam Pelajaran';
+                    const labelSatuan = isBK ? 'Kelas' : 'Jam Pelajaran';
                     
                     return (
                       <div key={m} className={`bg-slate-900/50 print:bg-transparent p-4 rounded-lg border ${isCritical ? 'border-red-900/50 print:border-red-500' : 'border-amber-900/30 print:border-black'}`}>
@@ -535,7 +643,7 @@ const RekapKebutuhanGuru = () => {
                             Kelebihan {data.kelebihan} Guru
                           </span>
                         </p>
-                        <p className="text-sm text-slate-400 print:text-gray-800 mb-4">Total beban {data.totalJam || 0} {isBK ? 'Siswa' : 'Jam Pelajaran'}, namun diampu oleh {data.guruAda || 0} Guru.</p>
+                        <p className="text-sm text-slate-400 print:text-gray-800 mb-4">Total beban {data.totalJam || 0} {isBK ? 'Kelas' : 'Jam Pelajaran'}, namun diampu oleh {data.guruAda || 0} Guru.</p>
                         
                         <table className="w-full text-left text-xs border border-slate-700 print:border-black">
                           <thead className="bg-slate-800 text-emerald-400 print:bg-gray-200 print:text-black text-center">
@@ -626,18 +734,23 @@ const RekapKebutuhanGuru = () => {
                 </div>
 
                 <div className="mb-8">
-                  <label className="block text-sm font-semibold text-slate-300 mb-4">Kalkulator Kebutuhan Guru (Rentang 30-40 Jam. Khusus BK 150-180 Konseli)</label>
+                  <label className="block text-sm font-semibold text-slate-300 mb-4">Kalkulator Kebutuhan Guru (Target 30 Jam, Cadangan 24 Jam. Khusus BK 5-8 Kelas)</label>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {mapelList.map(mapel => (
+                    {mapelList.map(mapel => {
+                      const isBK = mapel.toLowerCase().includes('bimbingan') || mapel.toLowerCase().includes('konseling') || mapel.toLowerCase() === 'bk';
+                      const labelT = isBK ? 'TOTAL KELAS' : 'TOTAL JAM';
+                      const labelG = isBK ? 'TOTAL GURU' : 'GURU SAAT INI';
+
+                      return (
                       <div key={mapel} className="bg-slate-900/50 p-4 rounded-lg border border-slate-700">
                         <p className="text-sm font-bold text-cyan-400 mb-3 truncate">{mapel}</p>
                         <div className="grid grid-cols-2 gap-3 mb-4">
                           <div>
-                            <label className="block text-[10px] text-slate-500 mb-1">TOTAL JAM / SISWA</label>
+                            <label className="block text-[10px] text-slate-500 mb-1">{labelT}</label>
                             <input type="number" min="0" value={editCalc[mapel]?.totalJam} onChange={(e) => handleCalculation(mapel, 'totalJam', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-2 text-center"/>
                           </div>
                           <div>
-                            <label className="block text-[10px] text-slate-500 mb-1">GURU SAAT INI</label>
+                            <label className="block text-[10px] text-slate-500 mb-1">{labelG}</label>
                             <input type="number" min="0" value={editCalc[mapel]?.guruTersedia} onChange={(e) => handleCalculation(mapel, 'guruTersedia', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-2 text-center"/>
                           </div>
                         </div>
@@ -646,7 +759,8 @@ const RekapKebutuhanGuru = () => {
                           <div className="text-center"><span className="text-[10px] text-slate-500 block">LEBIH</span><span className="text-sm font-bold text-emerald-400">{editCalc[mapel]?.kelebihan || 0}</span></div>
                         </div>
                       </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
 
