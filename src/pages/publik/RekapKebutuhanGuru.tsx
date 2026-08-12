@@ -64,7 +64,6 @@ const RekapKebutuhanGuru = () => {
       const grouped: Record<string, ProcessedData> = {};
       const mapels = new Set<string>();
 
-      // A. Ambil dari Sheets
       try {
         const sheetId = "1lh8N_TeVWG7F_A_QwWOu0bn3zX0KIHviA3CEOePysm0";
         const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
@@ -113,7 +112,6 @@ const RekapKebutuhanGuru = () => {
         console.warn("Spreadsheet tidak merespon. Mengandalkan Database.");
       }
 
-      // B. Ambil Pembaruan & Data Sekolah Baru dari Supabase
       try {
         const { data: supaData } = await supabase.from('kebutuhan_guru').select('*');
         if (supaData) {
@@ -225,18 +223,67 @@ const RekapKebutuhanGuru = () => {
     else { alert("Akses Ditolak! PIN salah."); setPasswordInput(''); }
   };
 
+  // ================= LOGIKA KALKULASI RENTANG JAM & BK =================
   const handleCalculation = (mapel: string, field: 'totalJam' | 'guruTersedia', value: string) => {
     const numVal = value === '' ? '' : parseInt(value);
     const currentMapel = editCalc[mapel];
     const updatedMapel = { ...currentMapel, [field]: numVal };
 
     if (updatedMapel.totalJam !== '' && updatedMapel.guruTersedia !== '') {
-      const kebutuhanIdeal = Math.ceil(Number(updatedMapel.totalJam) / 30);
-      const selisih = Number(updatedMapel.guruTersedia) - kebutuhanIdeal;
-      if (selisih < 0) { updatedMapel.kurang = Math.abs(selisih); updatedMapel.kelebihan = 0; } 
-      else { updatedMapel.kelebihan = selisih; updatedMapel.kurang = 0; }
+      const T = Number(updatedMapel.totalJam);
+      const G = Number(updatedMapel.guruTersedia);
+      
+      let minLoad, maxLoad;
+
+      // Deteksi otomatis apakah ini mapel Bimbingan Konseling
+      const isBK = mapel.toLowerCase().includes('bimbingan') || mapel.toLowerCase().includes('konseling') || mapel.toLowerCase() === 'bk';
+
+      if (isBK) {
+        minLoad = 150; // Minimal 150 Konseli
+        maxLoad = 180; // Maksimal 180 Konseli
+      } else {
+        minLoad = 30;  // Minimal 30 Jam
+        maxLoad = 40;  // Maksimal 40 Jam
+      }
+
+      if (G === 0) {
+         // Jika belum ada guru sama sekali
+         updatedMapel.kurang = Math.ceil(T / maxLoad);
+         updatedMapel.kelebihan = 0;
+      } else {
+         const currentLoad = T / G;
+
+         if (currentLoad > maxLoad) {
+           // Kondisi Kurang Guru (Beban melebihi batas maksimal)
+           const idealTeachers = Math.ceil(T / maxLoad);
+           updatedMapel.kurang = idealTeachers - G;
+           updatedMapel.kelebihan = 0;
+         } else if (currentLoad < minLoad) {
+           // Kondisi Kelebihan Guru (Beban kurang dari batas minimal)
+           let maxAllowedTeachers = Math.floor(T / minLoad);
+           
+           // Pastikan jika ada jam/siswa (T > 0), minimal harus ada 1 guru yang diizinkan
+           if (T > 0 && maxAllowedTeachers === 0) {
+             maxAllowedTeachers = 1;
+           }
+
+           if (G > maxAllowedTeachers) {
+             updatedMapel.kelebihan = G - maxAllowedTeachers;
+             updatedMapel.kurang = 0;
+           } else {
+             // Secara teknis aman karena jumlah guru tidak melebihi yang diizinkan
+             updatedMapel.kelebihan = 0;
+             updatedMapel.kurang = 0;
+           }
+         } else {
+           // AMAN: Beban berada tepat di antara rentang minimal dan maksimal
+           updatedMapel.kurang = 0;
+           updatedMapel.kelebihan = 0;
+         }
+      }
     } else {
-      updatedMapel.kurang = 0; updatedMapel.kelebihan = 0;
+      updatedMapel.kurang = 0;
+      updatedMapel.kelebihan = 0;
     }
 
     setEditCalc(prev => ({ ...prev, [mapel]: updatedMapel }));
@@ -349,7 +396,7 @@ const RekapKebutuhanGuru = () => {
               <h1 className="text-2xl font-bold text-cyan-400 uppercase tracking-widest">Rekapitulasi Kebutuhan Guru</h1>
             </div>
             <div className="flex items-center gap-2 bg-emerald-900/30 px-4 py-2 rounded-lg">
-              <span className="text-emerald-400 font-medium text-sm">Standar Perhitungan: 30 Jam/Guru</span>
+              <span className="text-emerald-400 font-medium text-sm">Standar: 30-40 Jam (BK: 150-180 Siswa)</span>
             </div>
           </div>
 
@@ -449,6 +496,8 @@ const RekapKebutuhanGuru = () => {
                     const data = viewDetailSekolah.mapel[m];
                     const isCritical = data.kurang > 1;
                     const rataRata = data.guruAda > 0 ? (data.totalJam / data.guruAda).toFixed(1) : data.totalJam;
+                    const isBK = m.toLowerCase().includes('bimbingan') || m.toLowerCase().includes('konseling') || m.toLowerCase() === 'bk';
+                    const labelSatuan = isBK ? 'Siswa' : 'Jam Pelajaran';
                     
                     return (
                       <div key={m} className={`bg-slate-900/50 print:bg-transparent p-4 rounded-lg border ${isCritical ? 'border-red-900/50 print:border-red-500' : 'border-amber-900/30 print:border-black'}`}>
@@ -459,8 +508,8 @@ const RekapKebutuhanGuru = () => {
                           </span>
                         </p>
                         <p className="text-sm text-slate-400 print:text-gray-800">
-                          Saat ini mata pelajaran ini memiliki total beban <strong className="text-white print:text-black">{data.totalJam || 0} Jam Pelajaran</strong>, dan hanya diampu oleh <strong className="text-white print:text-black">{data.guruAda || 0} Guru</strong>. <br/>
-                          (Beban rata-rata saat ini menembus: <strong className={`${isCritical ? 'text-red-300 print:text-black' : 'text-amber-200 print:text-black'}`}>{rataRata} Jam/Guru</strong>).
+                          Saat ini mata pelajaran ini memiliki total beban <strong className="text-white print:text-black">{data.totalJam || 0} {labelSatuan}</strong>, dan hanya diampu oleh <strong className="text-white print:text-black">{data.guruAda || 0} Guru</strong>. <br/>
+                          (Beban rata-rata saat ini menembus: <strong className={`${isCritical ? 'text-red-300 print:text-black' : 'text-amber-200 print:text-black'}`}>{rataRata} {labelSatuan}/Guru</strong>).
                         </p>
                       </div>
                     );
@@ -476,6 +525,8 @@ const RekapKebutuhanGuru = () => {
                   {mapelList.filter(m => viewDetailSekolah.mapel[m]?.kelebihan > 0).map(m => {
                     const data = viewDetailSekolah.mapel[m];
                     const guruList = allSurplusTeachers.filter(t => t.sekolah === viewDetailSekolah.sekolah && t.bidangStudi === m);
+                    const isBK = m.toLowerCase().includes('bimbingan') || m.toLowerCase().includes('konseling') || m.toLowerCase() === 'bk';
+                    
                     return (
                       <div key={m} className="bg-slate-900/50 print:bg-transparent p-4 rounded-lg border border-emerald-900/30 print:border-black overflow-x-auto print:overflow-visible">
                         <p className="font-bold text-slate-200 print:text-black text-lg mb-1">
@@ -484,7 +535,7 @@ const RekapKebutuhanGuru = () => {
                             Kelebihan {data.kelebihan} Guru
                           </span>
                         </p>
-                        <p className="text-sm text-slate-400 print:text-gray-800 mb-4">Total beban {data.totalJam || 0} Jam Pelajaran, namun diampu oleh {data.guruAda || 0} Guru.</p>
+                        <p className="text-sm text-slate-400 print:text-gray-800 mb-4">Total beban {data.totalJam || 0} {isBK ? 'Siswa' : 'Jam Pelajaran'}, namun diampu oleh {data.guruAda || 0} Guru.</p>
                         
                         <table className="w-full text-left text-xs border border-slate-700 print:border-black">
                           <thead className="bg-slate-800 text-emerald-400 print:bg-gray-200 print:text-black text-center">
@@ -493,7 +544,7 @@ const RekapKebutuhanGuru = () => {
                               <th className="p-2 border border-slate-700 print:border-black">NIP</th>
                               <th className="p-2 border border-slate-700 print:border-black">Pangkat, Golongan, Jabatan</th>
                               <th className="p-2 border border-slate-700 print:border-black">PNS/ CPNS/ P3K</th>
-                              <th className="p-2 border border-slate-700 print:border-black">Ijasah Terakhir</th>
+                              <th className="p-2 border border-slate-700 print:border-black">Ijasah S1</th>
                               <th className="p-2 border border-slate-700 print:border-black">Bidang Studi Serdik</th>
                               <th className="p-2 border border-slate-700 print:border-black">Tugas Mengajar</th>
                               <th className="p-2 border border-slate-700 print:border-black">Jumlah Jam Mengajar</th>
@@ -575,14 +626,14 @@ const RekapKebutuhanGuru = () => {
                 </div>
 
                 <div className="mb-8">
-                  <label className="block text-sm font-semibold text-slate-300 mb-4">Kalkulator Kebutuhan Guru Per Mapel (Otomatis Basis 30 Jam)</label>
+                  <label className="block text-sm font-semibold text-slate-300 mb-4">Kalkulator Kebutuhan Guru (Rentang 30-40 Jam. Khusus BK 150-180 Konseli)</label>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {mapelList.map(mapel => (
                       <div key={mapel} className="bg-slate-900/50 p-4 rounded-lg border border-slate-700">
                         <p className="text-sm font-bold text-cyan-400 mb-3 truncate">{mapel}</p>
                         <div className="grid grid-cols-2 gap-3 mb-4">
                           <div>
-                            <label className="block text-[10px] text-slate-500 mb-1">TOTAL JAM</label>
+                            <label className="block text-[10px] text-slate-500 mb-1">TOTAL JAM / SISWA</label>
                             <input type="number" min="0" value={editCalc[mapel]?.totalJam} onChange={(e) => handleCalculation(mapel, 'totalJam', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-2 text-center"/>
                           </div>
                           <div>
