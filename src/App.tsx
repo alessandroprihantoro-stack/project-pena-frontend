@@ -17,6 +17,9 @@ import KelolaSekolah from "./pages/admin/KelolaSekolah";
 import KelolaPapanInformasi from "./pages/admin/KelolaPapanInformasi";
 import RekapKebutuhanGuru from './pages/publik/RekapKebutuhanGuru';
 
+// 🌟 IMPORT JALUR RAHASIA SUPER ADMIN
+import AdminHapusSekolah from './pages/publik/AdminHapusSekolah';
+
 // Import Jantung Dasbor Utama
 import DashboardPengawas from "./pages/pengawas/DashboardPengawas";
 import DashboardSekolah from "./pages/sekolah/DashboardSekolah";
@@ -78,6 +81,9 @@ export default function App() {
           <Route path="/publik" element={<EtalasePublik />} />
           <Route path="/generator-laporan" element={<GeneratorLaporan />} />
           <Route path="/rekap-guru" element={<RekapKebutuhanGuru />} />
+
+          {/* 🚨 JALUR RAHASIA SUPER ADMIN (Akses Langsung via URL) */}
+          <Route path="/panel-rahasia-hapus" element={<AdminHapusSekolah />} />
 
           {/* ================= ZONA UNIVERSAL (SEMUA AKUN TERVERIFIKASI) ================= */}
           {/* 🌟 CHECKPOINT PROTECTION: Ditambahkan CABDIN agar bisa baca pengumuman */}
