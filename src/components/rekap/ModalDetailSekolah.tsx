@@ -1,5 +1,5 @@
 import React from 'react';
-import { calculateKebutuhan, generateDistributionText } from '../../utils/kalkulasiGuru';
+import { calculateKebutuhan } from '../../utils/kalkulasiGuru';
 
 export interface ProcessedData {
   kabupaten: string;
@@ -18,7 +18,7 @@ export interface SurplusTeacher {
   tugasMengajar: string;
   jamMengajar: number | '';
   jamTambahan: number | '';
-  rincianTugasTambahan?: string; // FITUR BARU
+  rincianTugasTambahan?: string;
   totalJam: number | '';
   alamat: string;
   sekolah?: string;
@@ -42,27 +42,11 @@ const ModalDetailSekolah: React.FC<ModalProps> = ({
   
   const getSortedKekuranganMapels = (sekolahData: ProcessedData) => {
     return mapelList
-      .filter(m => {
-          const t = sekolahData.mapel[m]?.totalJam || 0;
-          const g = sekolahData.mapel[m]?.guruAda || 0;
-          const { kurang } = calculateKebutuhan(m, t, g);
-          return kurang > 0;
-      })
-      .sort((a, b) => {
-          const tA = sekolahData.mapel[a].totalJam;
-          const gA = sekolahData.mapel[a].guruAda;
-          const tB = sekolahData.mapel[b].totalJam;
-          const gB = sekolahData.mapel[b].guruAda;
-          return calculateKebutuhan(b, tB, gB).kurang - calculateKebutuhan(a, tA, gA).kurang;
-      });
+      .filter(m => (sekolahData.mapel[m]?.kurang || 0) > 0)
+      .sort((a, b) => (sekolahData.mapel[b]?.kurang || 0) - (sekolahData.mapel[a]?.kurang || 0));
   };
 
-  const mapelKelebihan = mapelList.filter(m => {
-      const t = viewDetailSekolah.mapel[m]?.totalJam || 0;
-      const g = viewDetailSekolah.mapel[m]?.guruAda || 0;
-      const { kelebihan } = calculateKebutuhan(m, t, g);
-      return kelebihan > 0;
-  });
+  const mapelKelebihan = mapelList.filter(m => (viewDetailSekolah.mapel[m]?.kelebihan || 0) > 0);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:static print:bg-transparent print:p-0 print:block">
@@ -85,9 +69,9 @@ const ModalDetailSekolah: React.FC<ModalProps> = ({
           <div className="space-y-3">
             {getSortedKekuranganMapels(viewDetailSekolah).map(m => {
               const data = viewDetailSekolah.mapel[m];
-              const { kurang, isBK } = calculateKebutuhan(m, data.totalJam, data.guruAda);
+              const isBK = m.toLowerCase().includes('bimbingan') || m.toLowerCase().includes('konseling') || m.toLowerCase() === 'bk';
+              const kurang = data.kurang; 
               const isCritical = kurang > 1;
-              const rataRata = data.guruAda > 0 ? (data.totalJam / data.guruAda).toFixed(1) : data.totalJam;
               const labelSatuan = isBK ? 'Kelas' : 'Jam Pelajaran';
               
               return (
@@ -100,7 +84,7 @@ const ModalDetailSekolah: React.FC<ModalProps> = ({
                   </p>
                   <p className="text-sm text-slate-400 print:text-gray-800">
                     Saat ini memiliki beban <strong className="text-white print:text-black">{data.totalJam || 0} {labelSatuan}</strong>, namun hanya diampu oleh <strong className="text-white print:text-black">{data.guruAda || 0} Guru</strong>. <br/>
-                    (Beban rata-rata menembus batas maksimal: <strong className={`${isCritical ? 'text-red-300 print:text-black' : 'text-amber-200 print:text-black'}`}>{rataRata} {labelSatuan}/Guru</strong>).
+                    (Jam ideal guru adalah 30 jam pelajaran).
                   </p>
                 </div>
               );
@@ -116,8 +100,8 @@ const ModalDetailSekolah: React.FC<ModalProps> = ({
               const data = viewDetailSekolah.mapel[m];
               const guruList = allSurplusTeachers.filter(t => t.sekolah === viewDetailSekolah.sekolah && t.bidangStudi === m);
               
-              const { kelebihan, warningMessages, isBK } = calculateKebutuhan(m, data.totalJam, data.guruAda);
-              const distributionText = generateDistributionText(m, data.totalJam, data.guruAda);
+              const kelebihan = data.kelebihan; 
+              const { warningMessages, isBK } = calculateKebutuhan(m, data.totalJam || 0, data.guruAda || 0);
               const labelSatuan = isBK ? 'Kelas' : 'Jam Pelajaran';
 
               return (
@@ -142,19 +126,13 @@ const ModalDetailSekolah: React.FC<ModalProps> = ({
                         </span>
                       </p>
                       <p className="text-sm text-slate-400 print:text-gray-800">
-                        Total beban {data.totalJam || 0} {labelSatuan}, namun diampu oleh {data.guruAda || 0} Guru. Rata-rata jam tidak memenuhi standar minimal 24 {labelSatuan}.
+                        Total beban {data.totalJam || 0} {labelSatuan}, namun diampu oleh {data.guruAda || 0} Guru. <br/>
+                        (Jam ideal guru adalah 30 jam pelajaran).
                       </p>
                     </div>
                   </div>
                   
-                  {distributionText && (
-                    <div className="bg-slate-950/50 print:bg-gray-100 p-3 rounded-lg border border-slate-700 print:border-gray-300 text-xs mb-4 w-full">
-                      <p className="text-cyan-400 print:text-black font-bold mb-1">💡 Simulasi Distribusi Beban (Target Minimal 24, Ideal 30):</p>
-                      <p className="text-slate-300 print:text-gray-800 font-mono leading-relaxed">{distributionText}</p>
-                    </div>
-                  )}
-                  
-                  <table className="w-full text-left text-xs border border-slate-700 print:border-black">
+                  <table className="w-full text-left text-xs border border-slate-700 print:border-black mt-4">
                     <thead className="bg-slate-800 text-emerald-400 print:bg-gray-200 print:text-black text-center">
                       <tr>
                         <th className="p-2 border border-slate-700 print:border-black">No</th>

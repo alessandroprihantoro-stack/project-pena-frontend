@@ -1,7 +1,7 @@
 export interface KebutuhanResult {
   kurang: number;
   kelebihan: number;
-  warningMessages: string[]; // Diubah dari angka menjadi deretan kalimat cerdas AI
+  warningMessages: string[]; 
   isBK: boolean;
 }
 
@@ -14,9 +14,10 @@ export const calculateKebutuhan = (mapel: string, T: number, G: number): Kebutuh
   let kelebihan = 0;
   const warningMessages: string[] = [];
 
-  const minLoad = isBK ? 5 : 24;
-  const maxLoad = isBK ? 8 : 40;
-  const targetLoad = isBK ? 5 : 30; // Simulasi diutamakan mengisi 30 dulu
+  // REVISI ATURAN BARU: Min 30, Maks 37
+  const minLoad = isBK ? 5 : 30; 
+  const maxLoad = isBK ? 8 : 37; 
+  const targetLoad = isBK ? 5 : 30; 
   const satuan = isBK ? 'kelas' : 'jam pelajaran';
 
   if (G === 0) {
@@ -29,7 +30,6 @@ export const calculateKebutuhan = (mapel: string, T: number, G: number): Kebutuh
           const maxAllowed = Math.floor(T / minLoad);
           kelebihan = G - maxAllowed;
           
-          // AI Simulasi Distribusi Beban untuk membuat kalimat peringatan yang spesifik
           let remaining = T;
           const loads = [];
           for (let i = 0; i < G; i++) {
@@ -42,7 +42,6 @@ export const calculateKebutuhan = (mapel: string, T: number, G: number): Kebutuh
               }
           }
           
-          // Mengelompokkan guru yang jamnya di bawah batas minimal (24)
           const deficits: Record<number, number> = {};
           loads.forEach(load => {
               if (load < minLoad) {

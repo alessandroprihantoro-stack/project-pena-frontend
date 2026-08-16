@@ -19,7 +19,7 @@ export interface SurplusTeacher {
   tugasMengajar: string;
   jamMengajar: number | '';
   jamTambahan: number | '';
-  rincianTugasTambahan?: string; // FITUR BARU
+  rincianTugasTambahan?: string;
   totalJam: number | '';
   alamat: string;
   sekolah?: string;
@@ -45,6 +45,9 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
   const [editCalc, setEditCalc] = useState<Record<string, EditMapelData>>({});
   const [surplusTeachers, setSurplusTeachers] = useState<SurplusTeacher[]>([]);
   
+  // FITUR ENTERPRISE: Kotak Pencarian Mapel
+  const [searchMapel, setSearchMapel] = useState<string>('');
+  
   const [isUnlocked, setIsUnlocked] = useState<boolean>(false);
   const [passwordInput, setPasswordInput] = useState<string>('');
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -52,11 +55,14 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
   const SECRET_PIN = "6irisaka"; 
   const MASTER_PASSWORD = "SuperAdmin2026!"; 
 
+  const uniqueKabupaten = Array.from(new Set(data.map(d => d.kabupaten).filter(Boolean)));
+
   const handleSelectEditSekolah = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const sek = e.target.value;
     setEditSekolah(sek);
     setIsUnlocked(false);
     setPasswordInput('');
+    setSearchMapel(''); // Reset pencarian saat ganti sekolah
 
     if (sek === 'NEW') {
       setEditFormData({ kabupaten: '', sekolah: '', mapel: {} });
@@ -69,15 +75,17 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
       if (schoolData) {
         setEditFormData(JSON.parse(JSON.stringify(schoolData)));
         const initialCalc: Record<string, EditMapelData> = {};
+        
         mapelList.forEach(m => {
            initialCalc[m] = { 
-             totalJam: schoolData.mapel[m]?.totalJam || '', 
-             guruTersedia: schoolData.mapel[m]?.guruAda || '', 
+             totalJam: Number(schoolData.mapel[m]?.totalJam) > 0 ? schoolData.mapel[m].totalJam : '', 
+             guruTersedia: Number(schoolData.mapel[m]?.guruAda) > 0 ? schoolData.mapel[m].guruAda : '', 
              kurang: schoolData.mapel[m]?.kurang || 0, 
              kelebihan: schoolData.mapel[m]?.kelebihan || 0 
            };
         });
         setEditCalc(initialCalc);
+        
         const existingTeachers = allSurplusTeachers.filter(t => t.sekolah === sek);
         setSurplusTeachers(existingTeachers);
       }
@@ -94,29 +102,25 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
 
   const handleCalculationUI = (mapel: string, field: 'totalJam' | 'guruTersedia', value: string) => {
     const numVal = value === '' ? '' : parseInt(value);
-    const currentMapel = editCalc[mapel];
-    const updatedMapel = { ...currentMapel, [field]: numVal };
+    
+    setEditCalc(prev => {
+      const currentMapel = prev[mapel] || { totalJam: '', guruTersedia: '', kurang: 0, kelebihan: 0 };
+      const updatedMapel = { ...currentMapel, [field]: numVal };
 
-    const T = Number(updatedMapel.totalJam || 0);
-    const G = Number(updatedMapel.guruTersedia || 0);
+      const T = updatedMapel.totalJam === '' ? 0 : Number(updatedMapel.totalJam);
+      const G = updatedMapel.guruTersedia === '' ? 0 : Number(updatedMapel.guruTersedia);
 
-    if (updatedMapel.totalJam !== '' && updatedMapel.guruTersedia !== '') {
-        const { kurang, kelebihan } = calculateKebutuhan(mapel, T, G);
-        updatedMapel.kurang = kurang;
-        updatedMapel.kelebihan = kelebihan;
-    } else {
-        updatedMapel.kurang = 0;
-        updatedMapel.kelebihan = 0;
-    }
+      if (T > 0 || G > 0) {
+          const { kurang, kelebihan } = calculateKebutuhan(mapel, T, G);
+          updatedMapel.kurang = kurang;
+          updatedMapel.kelebihan = kelebihan;
+      } else {
+          updatedMapel.kurang = 0;
+          updatedMapel.kelebihan = 0;
+      }
 
-    setEditCalc(prev => ({ ...prev, [mapel]: updatedMapel }));
-
-    if (editFormData) {
-      setEditFormData({
-        ...editFormData,
-        mapel: { ...editFormData.mapel, [mapel]: { kurang: updatedMapel.kurang, kelebihan: updatedMapel.kelebihan, totalJam: T, guruAda: G } }
-      });
-    }
+      return { ...prev, [mapel]: updatedMapel };
+    });
   };
 
   const hasAnySurplus = Object.values(editCalc).some(calc => calc.kelebihan > 0);
@@ -124,20 +128,53 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
   const handleSimpanData = async () => {
     if (!editFormData) return;
     const targetSekolah = editSekolah === 'NEW' ? editFormData.sekolah.trim() : editSekolah;
-    if (!targetSekolah || !editFormData.kabupaten) { alert("⚠️ Nama Sekolah dan Kabupaten wajib diisi!"); return; }
+    if (!targetSekolah || !editFormData.kabupaten || editFormData.kabupaten === '-') { 
+        alert("⚠️ Nama Sekolah dan Kabupaten wajib dipilih/diisi!"); 
+        return; 
+    }
 
     setIsSaving(true);
 
     try {
-      const kebutuhanPayload = mapelList.map(mapel => ({
-        sekolah: targetSekolah, kabupaten: editFormData.kabupaten, mapel: mapel,
-        kurang: editFormData.mapel[mapel]?.kurang || 0, kelebihan: editFormData.mapel[mapel]?.kelebihan || 0,
-        total_jam: editFormData.mapel[mapel]?.totalJam || 0, guru_ada: editFormData.mapel[mapel]?.guruAda || 0,
-        last_updated: new Date().toISOString()
-      }));
+      // FITUR ENTERPRISE: SMART SAVE (Filter data kosong)
+      const payloadToSave = mapelList.map(mapel => {
+        const calc = editCalc[mapel];
+        const originalMapel = editFormData.mapel[mapel] || {};
+        
+        const T = calc?.totalJam === '' ? 0 : Number(calc?.totalJam);
+        const G = calc?.guruTersedia === '' ? 0 : Number(calc?.guruTersedia);
+        
+        let finalKurang = calc?.kurang || 0;
+        let finalLebih = calc?.kelebihan || 0;
 
-      const { error: errKebutuhan } = await supabase.from('kebutuhan_guru').upsert(kebutuhanPayload, { onConflict: 'sekolah, mapel' });
-      if (errKebutuhan) throw errKebutuhan;
+        if (T === 0 && G === 0) {
+            finalKurang = originalMapel.kurang || 0;
+            finalLebih = originalMapel.kelebihan || 0;
+        }
+
+        return {
+          sekolah: targetSekolah, 
+          kabupaten: editFormData.kabupaten, 
+          mapel: mapel,
+          kurang: finalKurang, 
+          kelebihan: finalLebih,
+          total_jam: T, 
+          guru_ada: G,
+          last_updated: new Date().toISOString()
+        };
+      }).filter(item => {
+          // Hanya simpan jika SEKARANG ada isinya, atau SEBELUMNYA ada isinya (untuk ditimpa jadi 0)
+          const hasDataNow = item.total_jam > 0 || item.guru_ada > 0 || item.kurang !== 0 || item.kelebihan !== 0;
+          const original = editFormData.mapel[item.mapel];
+          const hadDataBefore = original && (original.totalJam > 0 || original.guruAda > 0 || original.kurang !== 0 || original.kelebihan !== 0);
+          return hasDataNow || hadDataBefore;
+      });
+
+      // Proses simpan payload yang sudah di-diet-kan (Dari 80 baris menjadi hanya belasan baris!)
+      if (payloadToSave.length > 0) {
+          const { error: errKebutuhan } = await supabase.from('kebutuhan_guru').upsert(payloadToSave, { onConflict: 'sekolah, mapel' });
+          if (errKebutuhan) throw errKebutuhan;
+      }
 
       await supabase.from('guru_kelebihan').delete().eq('sekolah', targetSekolah);
 
@@ -150,12 +187,15 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
       }
 
       alert("🎉 Data instansi berhasil disimpan ke Database secara permanen!");
-      window.location.reload(); 
+      
+      setTimeout(() => {
+        window.location.href = window.location.pathname + '?refresh=' + new Date().getTime();
+      }, 800); 
+
     } catch (err) {
       alert("❌ Gagal menyimpan data: " + (err instanceof Error ? err.message : String(err)));
-    } finally {
       setIsSaving(false);
-    }
+    } 
   };
 
   const handleDeleteSekolah = async () => {
@@ -176,7 +216,11 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
       if (errGuru) throw errGuru;
 
       alert(`✅ Seluruh data untuk instansi ${editSekolah} berhasil dihapus permanen dari Database.`);
-      window.location.reload(); 
+      
+      setTimeout(() => {
+        window.location.href = window.location.pathname + '?refresh=' + new Date().getTime();
+      }, 800);
+
     } catch (err) {
       alert("❌ Gagal menghapus data: " + (err instanceof Error ? err.message : String(err)));
       setIsSaving(false);
@@ -189,6 +233,7 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
     setSurplusTeachers([]);
     setIsUnlocked(false);
     setPasswordInput('');
+    setSearchMapel('');
   };
 
   const addSurplusRow = () => setSurplusTeachers([...surplusTeachers, { id: Date.now(), nama: '', nip: '', pangkat: '', statusPegawai: '', ijasah: '', bidangStudi: '', tugasMengajar: '', jamMengajar: '', jamTambahan: '', rincianTugasTambahan: '', totalJam: '', alamat: '' }]);
@@ -203,6 +248,21 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
     }));
   };
   const removeSurplusRow = (id: string | number) => setSurplusTeachers(surplusTeachers.filter(t => t.id !== id));
+
+  const currentKabupaten = (!editFormData?.kabupaten || editFormData.kabupaten === '-') ? '' : editFormData.kabupaten;
+
+  // FITUR ENTERPRISE: AUTO-SORTING & FILTERING UI
+  // Mapel yang ada isinya (T/G/K/L > 0) otomatis dikumpulkan di paling atas!
+  const activeMapelsFirst = [...mapelList].sort((a, b) => {
+    const aActive = Number(editCalc[a]?.totalJam) > 0 || Number(editCalc[a]?.guruTersedia) > 0 || editCalc[a]?.kurang !== 0 || editCalc[a]?.kelebihan !== 0;
+    const bActive = Number(editCalc[b]?.totalJam) > 0 || Number(editCalc[b]?.guruTersedia) > 0 || editCalc[b]?.kurang !== 0 || editCalc[b]?.kelebihan !== 0;
+    
+    if (aActive && !bActive) return -1;
+    if (!aActive && bActive) return 1;
+    return a.localeCompare(b);
+  });
+
+  const displayedMapels = activeMapelsFirst.filter(m => m.toLowerCase().includes(searchMapel.toLowerCase()));
 
   return (
     <>
@@ -239,43 +299,67 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
                  </div>
                  <div className="flex-1">
                     <label className="block text-sm font-semibold text-slate-300 mb-2">Kabupaten / Kota</label>
-                    <select value={editFormData.kabupaten} onChange={(e) => setEditFormData({...editFormData, kabupaten: e.target.value})} className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white focus:border-cyan-500 focus:outline-none">
-                      <option value="">-- Pilih Kabupaten --</option>
-                      <option value="Karanganyar">Karanganyar</option>
-                      <option value="Sragen">Sragen</option>
-                      <option value="Wonogiri">Wonogiri</option>
+                    <select value={currentKabupaten} onChange={(e) => setEditFormData({...editFormData, kabupaten: e.target.value})} className={`w-full bg-slate-900 border rounded-lg px-4 py-2 text-white focus:border-cyan-500 focus:outline-none ${!currentKabupaten ? 'border-rose-500 ring-1 ring-rose-500/50' : 'border-slate-600'}`}>
+                      <option value="">-- Wajib Pilih Kabupaten --</option>
+                      {uniqueKabupaten.filter(k => k !== '-').map(kab => <option key={kab} value={kab}>{kab}</option>)}
+                      {currentKabupaten && !uniqueKabupaten.includes(currentKabupaten) && (
+                          <option value={currentKabupaten}>{currentKabupaten}</option>
+                      )}
                     </select>
                  </div>
               </div>
 
               <div className="mb-8">
-                <label className="block text-sm font-semibold text-slate-300 mb-4">Kalkulator Kebutuhan Guru (Target 30 Jam, Minimal 24 Jam)</label>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {mapelList.map(mapel => {
-                    const isBK = mapel.toLowerCase().includes('bimbingan') || mapel.toLowerCase().includes('konseling') || mapel.toLowerCase() === 'bk';
-                    const labelT = isBK ? 'TOTAL KELAS' : 'TOTAL JAM';
-                    const labelG = isBK ? 'TOTAL GURU' : 'GURU SAAT INI';
-
-                    return (
-                    <div key={mapel} className="bg-slate-900/50 p-4 rounded-lg border border-slate-700">
-                      <p className="text-sm font-bold text-cyan-400 mb-3 truncate">{mapel}</p>
-                      <div className="grid grid-cols-2 gap-3 mb-4">
-                        <div>
-                          <label className="block text-[10px] text-slate-500 mb-1">{labelT}</label>
-                          <input type="number" min="0" value={editCalc[mapel]?.totalJam} onChange={(e) => handleCalculationUI(mapel, 'totalJam', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-2 text-center"/>
-                        </div>
-                        <div>
-                          <label className="block text-[10px] text-slate-500 mb-1">{labelG}</label>
-                          <input type="number" min="0" value={editCalc[mapel]?.guruTersedia} onChange={(e) => handleCalculationUI(mapel, 'guruTersedia', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-2 text-center"/>
-                        </div>
-                      </div>
-                      <div className="flex justify-between items-center bg-slate-950 p-2.5 rounded-lg">
-                        <div className="text-center"><span className="text-[10px] text-slate-500 block">KURANG</span><span className="text-sm font-bold text-amber-400">{editCalc[mapel]?.kurang || 0}</span></div>
-                        <div className="text-center"><span className="text-[10px] text-slate-500 block">LEBIH</span><span className="text-sm font-bold text-emerald-400">{editCalc[mapel]?.kelebihan || 0}</span></div>
-                      </div>
+                {/* FITUR ENTERPRISE: Live Search Bar UI */}
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4 bg-slate-900/50 p-3 rounded-lg border border-slate-700">
+                    <label className="block text-sm font-bold text-cyan-400">Kalkulator Kebutuhan Guru <span className="text-xs text-slate-400 font-normal ml-2">(Jam ideal: 30 jam pelajaran)</span></label>
+                    <div className="relative w-full sm:w-72">
+                       <span className="absolute left-3 top-2.5 text-slate-500">🔍</span>
+                       <input 
+                          type="text" 
+                          placeholder="Cari Mata Pelajaran (cth: Agama, Teknik)" 
+                          value={searchMapel}
+                          onChange={(e) => setSearchMapel(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-600 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none transition-colors shadow-inner"
+                       />
                     </div>
-                    )
-                  })}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {displayedMapels.length === 0 ? (
+                    <div className="col-span-full p-8 text-center text-slate-500 border-2 border-dashed border-slate-700 rounded-xl">
+                       Mata pelajaran tidak ditemukan. Coba gunakan kata kunci lain.
+                    </div>
+                  ) : (
+                    displayedMapels.map(mapel => {
+                      const isBK = mapel.toLowerCase().includes('bimbingan') || mapel.toLowerCase().includes('konseling') || mapel.toLowerCase() === 'bk';
+                      const labelT = isBK ? 'TOTAL KELAS' : 'TOTAL JAM';
+                      const labelG = isBK ? 'TOTAL GURU' : 'GURU SAAT INI';
+                      
+                      // Penanda visual untuk mapel yang ada isinya
+                      const isActive = Number(editCalc[mapel]?.totalJam) > 0 || Number(editCalc[mapel]?.guruTersedia) > 0;
+
+                      return (
+                      <div key={mapel} className={`p-4 rounded-lg border transition-colors ${isActive ? 'bg-cyan-900/20 border-cyan-800/50 shadow-md' : 'bg-slate-900/50 border-slate-700'}`}>
+                        <p className={`text-sm font-bold mb-3 truncate ${isActive ? 'text-cyan-300' : 'text-slate-400'}`}>{mapel}</p>
+                        <div className="grid grid-cols-2 gap-3 mb-4">
+                          <div>
+                            <label className="block text-[10px] text-slate-500 mb-1">{labelT}</label>
+                            <input type="number" min="0" value={editCalc[mapel]?.totalJam} onChange={(e) => handleCalculationUI(mapel, 'totalJam', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-2 text-center text-white focus:border-cyan-500 focus:bg-slate-900 outline-none transition-colors"/>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] text-slate-500 mb-1">{labelG}</label>
+                            <input type="number" min="0" value={editCalc[mapel]?.guruTersedia} onChange={(e) => handleCalculationUI(mapel, 'guruTersedia', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-2 text-center text-white focus:border-cyan-500 focus:bg-slate-900 outline-none transition-colors"/>
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center bg-slate-950 p-2.5 rounded-lg border border-slate-800/50">
+                          <div className="text-center"><span className="text-[10px] text-slate-500 block">KURANG</span><span className="text-sm font-bold text-amber-400">{editCalc[mapel]?.kurang || 0}</span></div>
+                          <div className="text-center"><span className="text-[10px] text-slate-500 block">LEBIH</span><span className="text-sm font-bold text-emerald-400">{editCalc[mapel]?.kelebihan || 0}</span></div>
+                        </div>
+                      </div>
+                      )
+                    })
+                  )}
                 </div>
               </div>
 
@@ -306,7 +390,7 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
                         <th className="p-3 border-r border-slate-700">Tugas Mengajar</th>
                         <th className="p-3 border-r border-slate-700">Jam Mengajar</th>
                         <th className="p-3 border-r border-slate-700">Jam Tambahan</th>
-                        <th className="p-3 border-r border-slate-700 min-w-40 text-amber-300">Rincian Tambahan</th> {/* KOLOM BARU */}
+                        <th className="p-3 border-r border-slate-700 min-w-40 text-amber-300">Rincian Tambahan</th>
                         <th className="p-3 border-r border-slate-700">Total Jam</th>
                         <th className="p-3 border-r border-slate-700">Alamat Domisili</th>
                         <th className="p-3">Hapus</th>
@@ -333,7 +417,7 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
                             <td className="p-2 border-r border-slate-700/50"><input type="text" value={teacher.tugasMengajar} onChange={(e) => updateSurplusRow(teacher.id, 'tugasMengajar', e.target.value)} className="w-full min-w-40 bg-slate-900 border border-slate-600 rounded px-2 py-1.5 focus:border-cyan-500 outline-none transition-colors" /></td>
                             <td className="p-2 border-r border-slate-700/50"><input type="number" min="0" value={teacher.jamMengajar} onChange={(e) => updateSurplusRow(teacher.id, 'jamMengajar', e.target.value)} className="w-full min-w-20 bg-slate-900 border border-slate-600 rounded px-2 py-1.5 focus:border-cyan-500 outline-none text-center transition-colors" /></td>
                             <td className="p-2 border-r border-slate-700/50"><input type="number" min="0" value={teacher.jamTambahan} onChange={(e) => updateSurplusRow(teacher.id, 'jamTambahan', e.target.value)} className="w-full min-w-20 bg-slate-900 border border-slate-600 rounded px-2 py-1.5 focus:border-cyan-500 outline-none text-center transition-colors" /></td>
-                            <td className="p-2 border-r border-slate-700/50"><input type="text" placeholder="Misal: Wali Kelas" value={teacher.rincianTugasTambahan || ''} onChange={(e) => updateSurplusRow(teacher.id, 'rincianTugasTambahan', e.target.value)} className="w-full min-w-40 bg-slate-900 border border-amber-600/50 rounded px-2 py-1.5 focus:border-amber-500 outline-none transition-colors" /></td> {/* INPUT BARU */}
+                            <td className="p-2 border-r border-slate-700/50"><input type="text" placeholder="Misal: Wali Kelas" value={teacher.rincianTugasTambahan || ''} onChange={(e) => updateSurplusRow(teacher.id, 'rincianTugasTambahan', e.target.value)} className="w-full min-w-40 bg-slate-900 border border-amber-600/50 rounded px-2 py-1.5 focus:border-amber-500 outline-none transition-colors" /></td>
                             <td className="p-2 border-r border-slate-700/50"><input type="number" value={teacher.totalJam} readOnly className="w-full min-w-16 bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-emerald-400 font-bold outline-none text-center cursor-not-allowed" /></td>
                             <td className="p-2 border-r border-slate-700/50"><input type="text" value={teacher.alamat} onChange={(e) => updateSurplusRow(teacher.id, 'alamat', e.target.value)} className="w-full min-w-56 bg-slate-900 border border-slate-600 rounded px-2 py-1.5 focus:border-cyan-500 outline-none transition-colors" /></td>
                             <td className="p-2 text-center"><button onClick={() => removeSurplusRow(teacher.id)} className="text-red-400 hover:bg-red-500 hover:text-white px-3 py-1.5 rounded transition-colors font-bold">X</button></td>

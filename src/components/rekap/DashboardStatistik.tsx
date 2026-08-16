@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { calculateKebutuhan } from '../../utils/kalkulasiGuru';
 
 export interface ProcessedData {
   kabupaten: string;
@@ -19,7 +18,7 @@ export interface SurplusTeacher {
   tugasMengajar: string;
   jamMengajar: number | '';
   jamTambahan: number | '';
-  rincianTugasTambahan?: string; // FITUR BARU
+  rincianTugasTambahan?: string;
   totalJam: number | '';
   alamat: string;
 }
@@ -30,6 +29,7 @@ interface DashboardProps {
   searchSurplusMapel: string;
   setSearchSurplusMapel: (val: string) => void;
   matchedSurplusTeachers: SurplusTeacher[];
+  sekolahSudahInput: string[];
 }
 
 const DashboardStatistik: React.FC<DashboardProps> = ({
@@ -37,18 +37,19 @@ const DashboardStatistik: React.FC<DashboardProps> = ({
   mapelList,
   searchSurplusMapel,
   setSearchSurplusMapel,
-  matchedSurplusTeachers
+  matchedSurplusTeachers,
+  sekolahSudahInput
 }) => {
   const [chartScope, setChartScope] = useState<string>('CABDIN 6');
   const [selectedTeacherDetail, setSelectedTeacherDetail] = useState<SurplusTeacher | null>(null);
 
+  // MENGGUNAKAN DATA LANGSUNG (TIDAK DIHITUNG ULANG AGAR TIDAK ERROR)
   let totalKekurangan = 0;
   let totalKelebihan = 0;
   dashboardData.forEach(school => {
     Object.values(school.mapel).forEach(m => {
-      const { kurang, kelebihan } = calculateKebutuhan('dummy', m.totalJam, m.guruAda);
-      totalKekurangan += kurang;
-      totalKelebihan += kelebihan;
+      totalKekurangan += m.kurang || 0;
+      totalKelebihan += m.kelebihan || 0;
     });
   });
 
@@ -59,18 +60,16 @@ const DashboardStatistik: React.FC<DashboardProps> = ({
       const kab = school.kabupaten || 'Lainnya';
       if (!rawChartData[kab]) rawChartData[kab] = { kurang: 0, lebih: 0 };
       Object.values(school.mapel).forEach(m => {
-        const { kurang, kelebihan } = calculateKebutuhan('dummy', m.totalJam, m.guruAda);
-        rawChartData[kab].kurang += kurang;
-        rawChartData[kab].lebih += kelebihan;
+        rawChartData[kab].kurang += m.kurang || 0;
+        rawChartData[kab].lebih += m.kelebihan || 0;
       });
     });
   } else {
     dashboardData.filter(d => d.kabupaten === chartScope).forEach(school => {
       Object.entries(school.mapel).forEach(([namaMapel, m]) => {
         if (!rawChartData[namaMapel]) rawChartData[namaMapel] = { kurang: 0, lebih: 0 };
-        const { kurang, kelebihan } = calculateKebutuhan(namaMapel, m.totalJam, m.guruAda);
-        rawChartData[namaMapel].kurang += kurang;
-        rawChartData[namaMapel].lebih += kelebihan;
+        rawChartData[namaMapel].kurang += m.kurang || 0;
+        rawChartData[namaMapel].lebih += m.kelebihan || 0;
       });
     });
   }
@@ -98,7 +97,7 @@ const DashboardStatistik: React.FC<DashboardProps> = ({
           <p className="text-sm text-slate-400 print:text-gray-600 mt-1">Pemetaan & Pusat Relokasi Guru Tingkat Menengah</p>
         </div>
         <div className="mt-4 md:mt-0 flex items-center gap-2 bg-emerald-900/30 print:bg-transparent px-4 py-2 rounded-lg print:p-0">
-          <span className="text-emerald-400 print:text-black font-medium text-sm">Target Beban: 30 Jam (Min: 24 Jam)</span>
+          <span className="text-emerald-400 print:text-black font-medium text-sm">Jam ideal guru 30 jam pelajaran (Min: 30, Maks: 37)</span>
         </div>
       </div>
 
@@ -138,7 +137,7 @@ const DashboardStatistik: React.FC<DashboardProps> = ({
                    onClick={() => {
                      if (chartScope !== 'CABDIN 6') setSearchSurplusMapel(d.label);
                    }}
-                   className={`flex flex-col items-center gap-2 min-w-[3rem] h-full justify-end group overflow-hidden snap-center px-1 rounded-t-lg transition-colors ${chartScope !== 'CABDIN 6' ? 'cursor-pointer hover:bg-slate-700/50' : ''}`}
+                   className={`flex flex-col items-center gap-2 min-w-12 h-full justify-end group overflow-hidden snap-center px-1 rounded-t-lg transition-colors ${chartScope !== 'CABDIN 6' ? 'cursor-pointer hover:bg-slate-700/50' : ''}`}
                    title={chartScope !== 'CABDIN 6' ? `Klik untuk mencari guru mapel ${d.label}` : d.label}
                 >
                   <div className="flex items-end gap-1 w-full justify-center h-full">
@@ -208,8 +207,25 @@ const DashboardStatistik: React.FC<DashboardProps> = ({
         </div>
       </div>
 
+      <div className="mt-6 bg-slate-900/50 p-5 rounded-xl border border-emerald-900/50 print:hidden">
+         <h3 className="text-sm font-bold text-emerald-400 mb-3 flex items-center gap-2">
+            ✅ Daftar Instansi Yang Telah Menyimpan Form Kalkulator Guru
+         </h3>
+         <div className="flex flex-wrap gap-2">
+            {sekolahSudahInput.length === 0 ? (
+               <span className="text-xs text-slate-500 italic">Belum ada sekolah yang menginput data ke database.</span>
+            ) : (
+               sekolahSudahInput.sort().map(sek => (
+                  <span key={sek} className="bg-emerald-900/40 text-emerald-300 border border-emerald-700/50 px-3 py-1 rounded-full text-[11px] font-bold shadow-md">
+                     {sek}
+                  </span>
+               ))
+            )}
+         </div>
+      </div>
+
       {selectedTeacherDetail && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden animate-fade-in-up">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 print:hidden animate-fade-in-up">
           <div className="bg-slate-800 w-full max-w-2xl rounded-xl border border-emerald-500/50 shadow-2xl p-6 relative">
             
             <button 
@@ -271,7 +287,6 @@ const DashboardStatistik: React.FC<DashboardProps> = ({
                 <div className="flex-1 text-center border-r border-slate-700 flex flex-col justify-center">
                    <span className="text-slate-500 block text-[10px] uppercase font-bold">Jam Tambahan</span>
                    <strong className="text-white text-lg leading-none mt-1">{selectedTeacherDetail.jamTambahan || 0}</strong>
-                   {/* MENAMPILKAN RINCIAN TUGAS TAMBAHAN DI SINI */}
                    {selectedTeacherDetail.rincianTugasTambahan && (
                      <span className="text-[10px] text-amber-400 font-medium italic mt-1 px-2 truncate" title={selectedTeacherDetail.rincianTugasTambahan}>
                        ({selectedTeacherDetail.rincianTugasTambahan})
@@ -291,11 +306,9 @@ const DashboardStatistik: React.FC<DashboardProps> = ({
                  </p>
               </div>
             </div>
-
           </div>
         </div>
       )}
-
     </div>
   );
 };
