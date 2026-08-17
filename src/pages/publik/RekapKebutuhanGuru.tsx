@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import Papa from 'papaparse';
 import { supabase } from '../../supabaseClient';
-import { calculateKebutuhan } from '../../utils/kalkulasiGuru';
 
 import DashboardStatistik from '../../components/rekap/DashboardStatistik';
 import ModalDetailSekolah from '../../components/rekap/ModalDetailSekolah';
@@ -10,7 +9,7 @@ import EditorInstansi from '../../components/rekap/EditorInstansi';
 export interface ProcessedData {
   kabupaten: string;
   sekolah: string;
-  mapel: Record<string, { kurang: number; kelebihan: number; totalJam: number; guruAda: number }>;
+  mapel: Record<string, { kurang: number; kelebihan: number }>;
 }
 
 export interface SurplusTeacher {
@@ -28,17 +27,6 @@ export interface SurplusTeacher {
   rincianTugasTambahan?: string;
   totalJam: number | '';
   alamat: string;
-}
-
-// DEFINISI TIPE DATA AGAR VS CODE TIDAK MARAH
-interface SupaDataRow {
-  sekolah?: string;
-  kabupaten?: string;
-  mapel?: string;
-  kurang?: number;
-  kelebihan?: number;
-  total_jam?: number;
-  guru_ada?: number;
 }
 
 interface SupaTeacherRow {
@@ -81,9 +69,9 @@ const RekapKebutuhanGuru = () => {
       setLoading(true);
       const grouped: Record<string, ProcessedData> = {};
       const mapels = new Set<string>();
-      const inputtedSchools = new Set<string>();
       const kamusKabupaten: Record<string, string> = {};
 
+      // 1. AMBIL ANGKA KEBUTUHAN DARI SPREADSHEET
       try {
         const sheetId = "1lh8N_TeVWG7F_A_QwWOu0bn3zX0KIHviA3CEOePysm0";
         const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
@@ -115,14 +103,28 @@ const RekapKebutuhanGuru = () => {
               const mapel = item[colMapel]?.trim();
 
               if (!sek) return;
-              if (kab !== '-' && !kamusKabupaten[sek]) kamusKabupaten[sek] = kab;
               if (!grouped[sek]) grouped[sek] = { kabupaten: kab, sekolah: sek, mapel: {} };
               
               if (mapel) {
+                let valKurang = parseInt(colKurang ? item[colKurang] : '0') || 0;
+                let valLebih = parseInt(colLebih ? item[colLebih] : '0') || 0;
+
+                if (colKurang === colLebih && colKurang) {
+                    if (valKurang < 0) {
+                        valKurang = Math.abs(valKurang);
+                        valLebih = 0;
+                    } else if (valKurang > 0) {
+                        valLebih = valKurang;
+                        valKurang = 0;
+                    }
+                } else {
+                    valKurang = Math.abs(valKurang);
+                    valLebih = Math.abs(valLebih);
+                }
+
                 grouped[sek].mapel[mapel] = {
-                  kurang: parseInt(colKurang ? item[colKurang] : '0') || 0,
-                  kelebihan: parseInt(colLebih ? item[colLebih] : '0') || 0,
-                  totalJam: 0, guruAda: 0
+                  kurang: valKurang,
+                  kelebihan: valLebih
                 };
                 mapels.add(mapel);
               }
@@ -131,79 +133,39 @@ const RekapKebutuhanGuru = () => {
         }
       } catch { console.warn("Spreadsheet tidak merespon."); }
 
-      // ==========================================
-      // TRIK PENYEDOT DATA TANPA BATAS (PAGINATION)
-      // Menerobos batas 1000 baris dari Supabase!
-      // ==========================================
+      // 2. AMBIL MAPPING KABUPATEN DARI SUPABASE
       try {
-        let allSupaData: SupaDataRow[] = [];
-        let from = 0;
-        const step = 1000;
-        let hasMore = true;
-
-        while (hasMore) {
-          const { data: chunk, error } = await supabase
-            .from('kebutuhan_guru')
-            .select('*')
-            .range(from, from + step - 1);
-
-          if (error) {
-            console.error("Error fetching chunk:", error);
-            break;
-          }
-
-          if (chunk && chunk.length > 0) {
-            allSupaData = [...allSupaData, ...(chunk as SupaDataRow[])];
-            from += step;
-            if (chunk.length < step) hasMore = false; 
-          } else {
-            hasMore = false;
-          }
-        }
-
-        if (allSupaData && allSupaData.length > 0) {
-          allSupaData.forEach(row => {
-            if (!row.sekolah || !row.mapel) return;
-            
-            const sek = row.sekolah;
-            const mapel = row.mapel;
-            
-            let finalKab = row.kabupaten;
-            if (!finalKab || finalKab === '-' || finalKab === 'null') {
-                finalKab = kamusKabupaten[sek] || '-';
-            }
-
-            if (!grouped[sek]) {
-                grouped[sek] = { kabupaten: finalKab, sekolah: sek, mapel: {} };
-            } else if (finalKab && finalKab !== '-' && finalKab !== 'null') {
-                grouped[sek].kabupaten = finalKab;
-            }
-
-            const existingT = Number(grouped[sek].mapel[mapel]?.totalJam) || 0;
-            const existingG = Number(grouped[sek].mapel[mapel]?.guruAda) || 0;
-            
-            const rowT = Number(row.total_jam) || 0;
-            const rowG = Number(row.guru_ada) || 0;
-
-            const T = Math.max(rowT, existingT);
-            const G = Math.max(rowG, existingG);
-            
-            if (T > 0 || G > 0) inputtedSchools.add(sek);
-
-            if (T > 0 || G > 0) {
-                const calc = calculateKebutuhan(mapel, T, G);
-                grouped[sek].mapel[mapel] = { kurang: calc.kurang, kelebihan: calc.kelebihan, totalJam: T, guruAda: G };
-            } else {
-                const fallbackKurang = Number(row.kurang) || Number(grouped[sek]?.mapel[mapel]?.kurang) || 0;
-                const fallbackLebih = Number(row.kelebihan) || Number(grouped[sek]?.mapel[mapel]?.kelebihan) || 0;
-                grouped[sek].mapel[mapel] = { kurang: fallbackKurang, kelebihan: fallbackLebih, totalJam: 0, guruAda: 0 };
-            }
-            mapels.add(mapel);
+        const { data: profileData } = await supabase
+          .from('kebutuhan_guru')
+          .select('sekolah, kabupaten')
+          .eq('mapel', '_PROFIL_SEKOLAH_');
+          
+        if (profileData) {
+          profileData.forEach(row => {
+            if (row.sekolah && row.kabupaten) kamusKabupaten[row.sekolah] = row.kabupaten;
           });
         }
+      } catch { console.warn("Gagal mengambil profil kabupaten."); }
 
+      // 3. TERAPKAN KABUPATEN KE DATA SEKOLAH (Dengan Auto-Detect Cerdas)
+      Object.values(grouped).forEach(school => {
+        if (kamusKabupaten[school.sekolah]) {
+            school.kabupaten = kamusKabupaten[school.sekolah];
+        } else {
+            // Jika belum di-set, aplikasi mencoba menebak dari nama sekolahnya!
+            const sName = school.sekolah.toUpperCase();
+            if (sName.includes('SRAGEN')) school.kabupaten = 'Sragen';
+            else if (sName.includes('KARANGANYAR')) school.kabupaten = 'Karanganyar';
+            else if (sName.includes('WONOGIRI')) school.kabupaten = 'Wonogiri';
+            else school.kabupaten = 'Lainnya';
+        }
+      });
+
+      // 4. AMBIL DATA RINCIAN NAMA GURU DARI SUPABASE
+      try {
         let allSupaTeachersRaw: SupaTeacherRow[] = [];
         let fromT = 0;
+        const step = 1000;
         let hasMoreT = true;
 
         while (hasMoreT) {
@@ -239,20 +201,16 @@ const RekapKebutuhanGuru = () => {
              totalJam: t.total_jam || '', 
              alamat: t.alamat || ''
            })));
+
+           const inputtedSchools = new Set(allSupaTeachersRaw.map(t => t.sekolah || '').filter(Boolean));
+           setSekolahSudahInput(Array.from(inputtedSchools));
         }
 
-      } catch { console.error("Gagal mengambil database."); }
-
-      Object.values(grouped).forEach(school => {
-          if (school.kabupaten === '-' && kamusKabupaten[school.sekolah]) {
-              school.kabupaten = kamusKabupaten[school.sekolah];
-          }
-      });
+      } catch { console.error("Gagal mengambil rincian guru dari database."); }
 
       if (Object.keys(grouped).length === 0) setError("Data kosong.");
       setMapelList(Array.from(mapels));
       setData(Object.values(grouped));
-      setSekolahSudahInput(Array.from(inputtedSchools));
       setLoading(false);
     };
     fetchAllData();
@@ -265,7 +223,7 @@ const RekapKebutuhanGuru = () => {
     return true;
   });
 
-  const listKabupaten = Array.from(new Set(dataByJenjang.map(d => d.kabupaten).filter(k => k && k !== '-')));
+  const listKabupaten = ['Karanganyar', 'Sragen', 'Wonogiri', 'Lainnya'];
   const listSekolahFilter = dataByJenjang.filter(d => filterKabupaten === '' || d.kabupaten === filterKabupaten).map(d => d.sekolah);
 
   const filteredData = dataByJenjang.filter(d => {
@@ -291,7 +249,7 @@ const RekapKebutuhanGuru = () => {
 
   const handleExportPDF = () => window.print();
 
-  if (loading) return <div className="flex justify-center items-center h-screen font-mono text-slate-400">MEMUAT DATA TABEL...</div>;
+  if (loading) return <div className="flex justify-center items-center h-screen font-mono text-slate-400">MEMUAT DATA SPREADSHEET...</div>;
   if (error) return <div className="p-8 text-center text-red-500 bg-red-50/10 font-mono">ERROR: {error}</div>;
 
   return (

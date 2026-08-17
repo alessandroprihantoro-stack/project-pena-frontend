@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
 import { supabase } from '../../supabaseClient';
-import { calculateKebutuhan } from '../../utils/kalkulasiGuru';
 
 export interface ProcessedData {
   kabupaten: string;
   sekolah: string;
-  mapel: Record<string, { kurang: number; kelebihan: number; totalJam: number; guruAda: number }>;
+  mapel: Record<string, { kurang: number; kelebihan: number }>;
 }
 
 export interface SurplusTeacher {
@@ -25,13 +24,6 @@ export interface SurplusTeacher {
   sekolah?: string;
 }
 
-interface EditMapelData {
-  totalJam: number | '';
-  guruTersedia: number | '';
-  kurang: number;
-  kelebihan: number;
-}
-
 interface EditorProps {
   data: ProcessedData[];
   mapelList: string[];
@@ -42,10 +34,8 @@ interface EditorProps {
 const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFilter, allSurplusTeachers }) => {
   const [editSekolah, setEditSekolah] = useState<string>('');
   const [editFormData, setEditFormData] = useState<ProcessedData | null>(null);
-  const [editCalc, setEditCalc] = useState<Record<string, EditMapelData>>({});
   const [surplusTeachers, setSurplusTeachers] = useState<SurplusTeacher[]>([]);
   
-  // FITUR ENTERPRISE: Kotak Pencarian Mapel
   const [searchMapel, setSearchMapel] = useState<string>('');
   
   const [isUnlocked, setIsUnlocked] = useState<boolean>(false);
@@ -55,37 +45,20 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
   const SECRET_PIN = "6irisaka"; 
   const MASTER_PASSWORD = "SuperAdmin2026!"; 
 
-  const uniqueKabupaten = Array.from(new Set(data.map(d => d.kabupaten).filter(Boolean)));
-
   const handleSelectEditSekolah = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const sek = e.target.value;
     setEditSekolah(sek);
     setIsUnlocked(false);
     setPasswordInput('');
-    setSearchMapel(''); // Reset pencarian saat ganti sekolah
+    setSearchMapel(''); 
 
     if (sek === 'NEW') {
       setEditFormData({ kabupaten: '', sekolah: '', mapel: {} });
-      const initialCalc: Record<string, EditMapelData> = {};
-      mapelList.forEach(m => { initialCalc[m] = { totalJam: '', guruTersedia: '', kurang: 0, kelebihan: 0 }; });
-      setEditCalc(initialCalc);
       setSurplusTeachers([]);
     } else if (sek) {
       const schoolData = data.find(d => d.sekolah === sek);
       if (schoolData) {
         setEditFormData(JSON.parse(JSON.stringify(schoolData)));
-        const initialCalc: Record<string, EditMapelData> = {};
-        
-        mapelList.forEach(m => {
-           initialCalc[m] = { 
-             totalJam: Number(schoolData.mapel[m]?.totalJam) > 0 ? schoolData.mapel[m].totalJam : '', 
-             guruTersedia: Number(schoolData.mapel[m]?.guruAda) > 0 ? schoolData.mapel[m].guruAda : '', 
-             kurang: schoolData.mapel[m]?.kurang || 0, 
-             kelebihan: schoolData.mapel[m]?.kelebihan || 0 
-           };
-        });
-        setEditCalc(initialCalc);
-        
         const existingTeachers = allSurplusTeachers.filter(t => t.sekolah === sek);
         setSurplusTeachers(existingTeachers);
       }
@@ -100,30 +73,7 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
     else { alert("Akses Ditolak! PIN salah."); setPasswordInput(''); }
   };
 
-  const handleCalculationUI = (mapel: string, field: 'totalJam' | 'guruTersedia', value: string) => {
-    const numVal = value === '' ? '' : parseInt(value);
-    
-    setEditCalc(prev => {
-      const currentMapel = prev[mapel] || { totalJam: '', guruTersedia: '', kurang: 0, kelebihan: 0 };
-      const updatedMapel = { ...currentMapel, [field]: numVal };
-
-      const T = updatedMapel.totalJam === '' ? 0 : Number(updatedMapel.totalJam);
-      const G = updatedMapel.guruTersedia === '' ? 0 : Number(updatedMapel.guruTersedia);
-
-      if (T > 0 || G > 0) {
-          const { kurang, kelebihan } = calculateKebutuhan(mapel, T, G);
-          updatedMapel.kurang = kurang;
-          updatedMapel.kelebihan = kelebihan;
-      } else {
-          updatedMapel.kurang = 0;
-          updatedMapel.kelebihan = 0;
-      }
-
-      return { ...prev, [mapel]: updatedMapel };
-    });
-  };
-
-  const hasAnySurplus = Object.values(editCalc).some(calc => calc.kelebihan > 0);
+  const hasAnySurplus = editFormData ? Object.values(editFormData.mapel).some(m => m.kelebihan > 0) : false;
 
   const handleSimpanData = async () => {
     if (!editFormData) return;
@@ -136,46 +86,22 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
     setIsSaving(true);
 
     try {
-      // FITUR ENTERPRISE: SMART SAVE (Filter data kosong)
-      const payloadToSave = mapelList.map(mapel => {
-        const calc = editCalc[mapel];
-        const originalMapel = editFormData.mapel[mapel] || {};
-        
-        const T = calc?.totalJam === '' ? 0 : Number(calc?.totalJam);
-        const G = calc?.guruTersedia === '' ? 0 : Number(calc?.guruTersedia);
-        
-        let finalKurang = calc?.kurang || 0;
-        let finalLebih = calc?.kelebihan || 0;
+      // 1. Simpan Profil Kabupaten Sekolah (1 baris saja)
+      const profilePayload = {
+        sekolah: targetSekolah,
+        kabupaten: editFormData.kabupaten,
+        mapel: '_PROFIL_SEKOLAH_',
+        kurang: 0,
+        kelebihan: 0,
+        total_jam: 0,
+        guru_ada: 0,
+        last_updated: new Date().toISOString()
+      };
+      
+      const { error: errProfil } = await supabase.from('kebutuhan_guru').upsert([profilePayload], { onConflict: 'sekolah, mapel' });
+      if (errProfil) throw errProfil;
 
-        if (T === 0 && G === 0) {
-            finalKurang = originalMapel.kurang || 0;
-            finalLebih = originalMapel.kelebihan || 0;
-        }
-
-        return {
-          sekolah: targetSekolah, 
-          kabupaten: editFormData.kabupaten, 
-          mapel: mapel,
-          kurang: finalKurang, 
-          kelebihan: finalLebih,
-          total_jam: T, 
-          guru_ada: G,
-          last_updated: new Date().toISOString()
-        };
-      }).filter(item => {
-          // Hanya simpan jika SEKARANG ada isinya, atau SEBELUMNYA ada isinya (untuk ditimpa jadi 0)
-          const hasDataNow = item.total_jam > 0 || item.guru_ada > 0 || item.kurang !== 0 || item.kelebihan !== 0;
-          const original = editFormData.mapel[item.mapel];
-          const hadDataBefore = original && (original.totalJam > 0 || original.guruAda > 0 || original.kurang !== 0 || original.kelebihan !== 0);
-          return hasDataNow || hadDataBefore;
-      });
-
-      // Proses simpan payload yang sudah di-diet-kan (Dari 80 baris menjadi hanya belasan baris!)
-      if (payloadToSave.length > 0) {
-          const { error: errKebutuhan } = await supabase.from('kebutuhan_guru').upsert(payloadToSave, { onConflict: 'sekolah, mapel' });
-          if (errKebutuhan) throw errKebutuhan;
-      }
-
+      // 2. Simpan Rincian Guru Mutasi
       await supabase.from('guru_kelebihan').delete().eq('sekolah', targetSekolah);
 
       if (surplusTeachers.length > 0) {
@@ -186,7 +112,7 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
         if (errTeacher) throw errTeacher;
       }
 
-      alert("🎉 Data instansi berhasil disimpan ke Database secara permanen!");
+      alert("🎉 Data profil sekolah dan rincian guru berhasil disimpan!");
       
       setTimeout(() => {
         window.location.href = window.location.pathname + '?refresh=' + new Date().getTime();
@@ -200,22 +126,20 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
 
   const handleDeleteSekolah = async () => {
     if (!editSekolah || editSekolah === 'NEW') return;
-    const pass = window.prompt("⚠️ OTORISASI DIPERLUKAN ⚠️\n\nMasukkan Master Password untuk menghapus sekolah ini:");
+    const pass = window.prompt("⚠️ OTORISASI DIPERLUKAN ⚠️\n\nMasukkan Master Password untuk menghapus rincian guru di sekolah ini:");
     if (pass !== MASTER_PASSWORD) {
         if (pass !== null) alert("❌ Akses Ditolak! Master Password salah.");
         return;
     }
-    const confirmDelete = window.confirm(`🔥 PERINGATAN BAHAYA 🔥\n\nApakah Anda YAKIN ingin MENGHAPUS PERMANEN seluruh data instansi:\n"${editSekolah}"?\n\nData yang dihapus tidak akan dapat dikembalikan!`);
+    const confirmDelete = window.confirm(`🔥 PERINGATAN BAHAYA 🔥\n\nApakah Anda YAKIN ingin MENGHAPUS seluruh tabel rincian guru di instansi:\n"${editSekolah}"?`);
     if (!confirmDelete) return;
 
     setIsSaving(true);
     try {
-      const { error: errKebutuhan } = await supabase.from('kebutuhan_guru').delete().eq('sekolah', editSekolah);
-      if (errKebutuhan) throw errKebutuhan;
       const { error: errGuru } = await supabase.from('guru_kelebihan').delete().eq('sekolah', editSekolah);
       if (errGuru) throw errGuru;
 
-      alert(`✅ Seluruh data untuk instansi ${editSekolah} berhasil dihapus permanen dari Database.`);
+      alert(`✅ Seluruh rincian guru untuk instansi ${editSekolah} berhasil dihapus permanen.`);
       
       setTimeout(() => {
         window.location.href = window.location.pathname + '?refresh=' + new Date().getTime();
@@ -249,28 +173,21 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
   };
   const removeSurplusRow = (id: string | number) => setSurplusTeachers(surplusTeachers.filter(t => t.id !== id));
 
+  const activeMapelsOnly = mapelList.filter(m => {
+    const kurang = editFormData?.mapel[m]?.kurang || 0;
+    const kelebihan = editFormData?.mapel[m]?.kelebihan || 0;
+    return kurang > 0 || kelebihan > 0;
+  }).sort((a, b) => a.localeCompare(b));
+
+  const displayedMapels = activeMapelsOnly.filter(m => m.toLowerCase().includes(searchMapel.toLowerCase()));
   const currentKabupaten = (!editFormData?.kabupaten || editFormData.kabupaten === '-') ? '' : editFormData.kabupaten;
-
-  // FITUR ENTERPRISE: AUTO-SORTING & FILTERING UI
-  // Mapel yang ada isinya (T/G/K/L > 0) otomatis dikumpulkan di paling atas!
-  const activeMapelsFirst = [...mapelList].sort((a, b) => {
-    const aActive = Number(editCalc[a]?.totalJam) > 0 || Number(editCalc[a]?.guruTersedia) > 0 || editCalc[a]?.kurang !== 0 || editCalc[a]?.kelebihan !== 0;
-    const bActive = Number(editCalc[b]?.totalJam) > 0 || Number(editCalc[b]?.guruTersedia) > 0 || editCalc[b]?.kurang !== 0 || editCalc[b]?.kelebihan !== 0;
-    
-    if (aActive && !bActive) return -1;
-    if (!aActive && bActive) return 1;
-    return a.localeCompare(b);
-  });
-
-  const displayedMapels = activeMapelsFirst.filter(m => m.toLowerCase().includes(searchMapel.toLowerCase()));
 
   return (
     <>
       <div className="border-t border-slate-700 pt-5 mt-5 print:hidden">
-        <h2 className="text-xs font-bold text-emerald-500/80 uppercase tracking-wider mb-3">📝 Mode Editor Instansi & Input Sekolah Baru</h2>
+        <h2 className="text-xs font-bold text-emerald-500/80 uppercase tracking-wider mb-3">📝 Input Rincian Data Guru Kelebihan</h2>
         <select className="w-full max-w-md bg-slate-950 border border-emerald-700/50 text-emerald-400 rounded-lg px-4 py-2.5" value={editSekolah} onChange={handleSelectEditSekolah}>
-          <option value="">-- Pilih Sekolah Untuk Diedit --</option>
-          <option value="NEW" className="text-cyan-400 font-bold">➕ TAMBAH SEKOLAH BARU</option>
+          <option value="">-- Pilih Sekolah --</option>
           {listSekolahFilter.map(sek => <option key={sek} value={sek}>{sek}</option>)}
         </select>
       </div>
@@ -299,25 +216,27 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
                  </div>
                  <div className="flex-1">
                     <label className="block text-sm font-semibold text-slate-300 mb-2">Kabupaten / Kota</label>
-                    <select value={currentKabupaten} onChange={(e) => setEditFormData({...editFormData, kabupaten: e.target.value})} className={`w-full bg-slate-900 border rounded-lg px-4 py-2 text-white focus:border-cyan-500 focus:outline-none ${!currentKabupaten ? 'border-rose-500 ring-1 ring-rose-500/50' : 'border-slate-600'}`}>
+                    <select 
+                      value={currentKabupaten} 
+                      onChange={(e) => setEditFormData({...editFormData, kabupaten: e.target.value})} 
+                      className={`w-full bg-slate-900 border rounded-lg px-4 py-2 text-white focus:border-cyan-500 focus:outline-none ${!currentKabupaten ? 'border-rose-500 ring-1 ring-rose-500/50' : 'border-slate-600'}`}
+                    >
                       <option value="">-- Wajib Pilih Kabupaten --</option>
-                      {uniqueKabupaten.filter(k => k !== '-').map(kab => <option key={kab} value={kab}>{kab}</option>)}
-                      {currentKabupaten && !uniqueKabupaten.includes(currentKabupaten) && (
-                          <option value={currentKabupaten}>{currentKabupaten}</option>
-                      )}
+                      <option value="Karanganyar">Kab. Karanganyar</option>
+                      <option value="Sragen">Kab. Sragen</option>
+                      <option value="Wonogiri">Kab. Wonogiri</option>
                     </select>
                  </div>
               </div>
 
               <div className="mb-8">
-                {/* FITUR ENTERPRISE: Live Search Bar UI */}
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4 bg-slate-900/50 p-3 rounded-lg border border-slate-700">
-                    <label className="block text-sm font-bold text-cyan-400">Kalkulator Kebutuhan Guru <span className="text-xs text-slate-400 font-normal ml-2">(Jam ideal: 30 jam pelajaran)</span></label>
+                    <label className="block text-sm font-bold text-cyan-400">Status Kebutuhan & Kelebihan Guru <span className="text-xs text-slate-400 font-normal ml-2">(Data Bersumber Dari Spreadsheet)</span></label>
                     <div className="relative w-full sm:w-72">
                        <span className="absolute left-3 top-2.5 text-slate-500">🔍</span>
                        <input 
                           type="text" 
-                          placeholder="Cari Mata Pelajaran (cth: Agama, Teknik)" 
+                          placeholder="Cari Mata Pelajaran..." 
                           value={searchMapel}
                           onChange={(e) => setSearchMapel(e.target.value)}
                           className="w-full bg-slate-950 border border-slate-600 rounded-lg pl-9 pr-4 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none transition-colors shadow-inner"
@@ -325,36 +244,28 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {displayedMapels.length === 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-h-75 overflow-y-auto pr-2" style={{ scrollbarWidth: 'thin' }}>
+                  {activeMapelsOnly.length === 0 ? (
+                    <div className="col-span-full p-8 text-center bg-emerald-900/20 border-2 border-dashed border-emerald-700/50 rounded-xl">
+                       <p className="text-emerald-400 font-bold text-lg mb-2">🎉 Kondisi Ideal!</p>
+                       <p className="text-slate-400 text-sm">Tidak ada mata pelajaran yang mengalami kekurangan atau kelebihan guru di sekolah ini.</p>
+                    </div>
+                  ) : displayedMapels.length === 0 ? (
                     <div className="col-span-full p-8 text-center text-slate-500 border-2 border-dashed border-slate-700 rounded-xl">
-                       Mata pelajaran tidak ditemukan. Coba gunakan kata kunci lain.
+                       Mata pelajaran tidak ditemukan berdasarkan pencarian Anda.
                     </div>
                   ) : (
                     displayedMapels.map(mapel => {
-                      const isBK = mapel.toLowerCase().includes('bimbingan') || mapel.toLowerCase().includes('konseling') || mapel.toLowerCase() === 'bk';
-                      const labelT = isBK ? 'TOTAL KELAS' : 'TOTAL JAM';
-                      const labelG = isBK ? 'TOTAL GURU' : 'GURU SAAT INI';
-                      
-                      // Penanda visual untuk mapel yang ada isinya
-                      const isActive = Number(editCalc[mapel]?.totalJam) > 0 || Number(editCalc[mapel]?.guruTersedia) > 0;
+                      const kurang = editFormData.mapel[mapel]?.kurang || 0;
+                      const kelebihan = editFormData.mapel[mapel]?.kelebihan || 0;
+                      const isKelebihan = kelebihan > 0;
 
                       return (
-                      <div key={mapel} className={`p-4 rounded-lg border transition-colors ${isActive ? 'bg-cyan-900/20 border-cyan-800/50 shadow-md' : 'bg-slate-900/50 border-slate-700'}`}>
-                        <p className={`text-sm font-bold mb-3 truncate ${isActive ? 'text-cyan-300' : 'text-slate-400'}`}>{mapel}</p>
-                        <div className="grid grid-cols-2 gap-3 mb-4">
-                          <div>
-                            <label className="block text-[10px] text-slate-500 mb-1">{labelT}</label>
-                            <input type="number" min="0" value={editCalc[mapel]?.totalJam} onChange={(e) => handleCalculationUI(mapel, 'totalJam', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-2 text-center text-white focus:border-cyan-500 focus:bg-slate-900 outline-none transition-colors"/>
-                          </div>
-                          <div>
-                            <label className="block text-[10px] text-slate-500 mb-1">{labelG}</label>
-                            <input type="number" min="0" value={editCalc[mapel]?.guruTersedia} onChange={(e) => handleCalculationUI(mapel, 'guruTersedia', e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-2 text-center text-white focus:border-cyan-500 focus:bg-slate-900 outline-none transition-colors"/>
-                          </div>
-                        </div>
+                      <div key={mapel} className={`p-4 rounded-lg border transition-colors ${isKelebihan ? 'bg-cyan-900/20 border-cyan-800/50 shadow-md' : 'bg-amber-900/10 border-amber-900/30'}`}>
+                        <p className={`text-sm font-bold mb-3 truncate ${isKelebihan ? 'text-cyan-300' : 'text-amber-400'}`}>{mapel}</p>
                         <div className="flex justify-between items-center bg-slate-950 p-2.5 rounded-lg border border-slate-800/50">
-                          <div className="text-center"><span className="text-[10px] text-slate-500 block">KURANG</span><span className="text-sm font-bold text-amber-400">{editCalc[mapel]?.kurang || 0}</span></div>
-                          <div className="text-center"><span className="text-[10px] text-slate-500 block">LEBIH</span><span className="text-sm font-bold text-emerald-400">{editCalc[mapel]?.kelebihan || 0}</span></div>
+                          <div className="text-center"><span className="text-[10px] text-slate-500 block">KURANG</span><span className={`text-sm font-bold ${kurang > 0 ? 'text-amber-400' : 'text-slate-600'}`}>{kurang}</span></div>
+                          <div className="text-center"><span className="text-[10px] text-slate-500 block">LEBIH</span><span className={`text-sm font-bold ${kelebihan > 0 ? 'text-emerald-400' : 'text-slate-600'}`}>{kelebihan}</span></div>
                         </div>
                       </div>
                       )
@@ -364,15 +275,15 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
               </div>
 
               {hasAnySurplus && (
-                <div className="bg-rose-900/30 border-l-4 border-rose-500 p-4 rounded-r-lg mb-6">
-                  <p className="text-rose-400 font-bold text-lg mb-1">⚠️ Peringatan: Terdeteksi Kelebihan Guru!</p>
-                  <p className="text-slate-300 text-sm">Sesuai prosedur, Anda diwajibkan untuk menginputkan <strong>SELURUH data rincian guru</strong> pada mata pelajaran yang berstatus "Lebih" ke dalam tabel di bawah ini.</p>
+                <div className="bg-emerald-900/30 border-l-4 border-emerald-500 p-4 rounded-r-lg mb-6">
+                  <p className="text-emerald-400 font-bold text-lg mb-1">Aksi Diperlukan: Terdeteksi Kelebihan Guru!</p>
+                  <p className="text-slate-300 text-sm">Sesuai prosedur, Anda diwajibkan untuk menginputkan <strong>SELURUH data rincian nama guru</strong> pada mata pelajaran yang berstatus "Lebih" ke dalam tabel di bawah ini.</p>
                 </div>
               )}
 
               <div className="mb-8 border-t border-slate-700 pt-8">
                 <div className="flex justify-between items-center mb-4">
-                  <label className="block text-sm font-semibold text-slate-300">Tabel Data Kelebihan Guru</label>
+                  <label className="block text-sm font-semibold text-slate-300">Tabel Rincian Guru Kelebihan (Mutasi)</label>
                   <button onClick={addSurplusRow} className="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg text-xs font-bold shadow-lg shadow-emerald-900/50">+ Tambah Baris Guru</button>
                 </div>
                 
@@ -381,10 +292,10 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
                     <thead className="bg-slate-900 text-slate-300 text-center whitespace-nowrap">
                       <tr>
                         <th className="p-3 border-r border-slate-700">No</th>
-                        <th className="p-3 border-r border-slate-700">Nama</th>
+                        <th className="p-3 border-r border-slate-700">Nama Lengkap</th>
                         <th className="p-3 border-r border-slate-700">NIP</th>
-                        <th className="p-3 border-r border-slate-700">Pangkat/Golongan</th>
-                        <th className="p-3 border-r border-slate-700">PNS/P3K</th>
+                        <th className="p-3 border-r border-slate-700">Pangkat/Gol.</th>
+                        <th className="p-3 border-r border-slate-700">Status Pegawai</th>
                         <th className="p-3 border-r border-slate-700">Ijasah S1</th>
                         <th className="p-3 border-r border-slate-700">Bidang Studi Serdik</th>
                         <th className="p-3 border-r border-slate-700">Tugas Mengajar</th>
@@ -398,7 +309,7 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
                     </thead>
                     <tbody>
                       {surplusTeachers.length === 0 ? (
-                        <tr><td colSpan={14} className="text-center py-8 text-slate-500 italic font-medium">Belum ada rincian data guru kelebihan.</td></tr>
+                        <tr><td colSpan={14} className="text-center py-8 text-slate-500 italic font-medium">Belum ada rincian data nama guru kelebihan diinputkan.</td></tr>
                       ) : (
                         surplusTeachers.map((teacher, index) => (
                           <tr key={teacher.id} className="border-b border-slate-700/50">
@@ -433,7 +344,7 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
                 <div>
                   {editSekolah !== 'NEW' && (
                     <button onClick={handleDeleteSekolah} disabled={isSaving} className="px-6 py-3 rounded-lg font-bold transition-all text-red-100 bg-red-900/50 hover:bg-red-700 hover:text-white border border-red-800">
-                      🗑️ HAPUS SEKOLAH INI
+                      🗑️ HAPUS DATA TABEL GURU DI SEKOLAH INI
                     </button>
                   )}
                 </div>
@@ -442,7 +353,7 @@ const EditorInstansi: React.FC<EditorProps> = ({ data, mapelList, listSekolahFil
                   <button onClick={handleCancelEdit} disabled={isSaving} className="px-6 py-3 rounded-lg font-bold transition-all text-slate-300 bg-slate-700 hover:bg-slate-600 hover:text-white">
                     ❌ BATAL / TUTUP
                   </button>
-                  <button onClick={handleSimpanData} disabled={isSaving} className={`px-8 py-3 rounded-lg font-bold transition-all shadow-lg ${isSaving ? 'bg-slate-600 text-slate-400 cursor-not-allowed shadow-none' : 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-900/50'}`}>
+                  <button onClick={handleSimpanData} disabled={isSaving} className={`px-8 py-3 rounded-lg font-bold transition-all shadow-lg ${isSaving ? 'bg-slate-600 text-slate-400 cursor-not-allowed shadow-none' : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/50'}`}>
                     {isSaving ? '🔄 MENYIMPAN DATA...' : '💾 SIMPAN DATA SEKOLAH'}
                   </button>
                 </div>

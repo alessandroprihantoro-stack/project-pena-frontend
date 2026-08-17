@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 export interface ProcessedData {
   kabupaten: string;
   sekolah: string;
-  mapel: Record<string, { kurang: number; kelebihan: number; totalJam: number; guruAda: number }>;
+  mapel: Record<string, { kurang: number; kelebihan: number }>;
 }
 
 export interface SurplusTeacher {
@@ -43,9 +43,9 @@ const DashboardStatistik: React.FC<DashboardProps> = ({
   const [chartScope, setChartScope] = useState<string>('CABDIN 6');
   const [selectedTeacherDetail, setSelectedTeacherDetail] = useState<SurplusTeacher | null>(null);
 
-  // MENGGUNAKAN DATA LANGSUNG (TIDAK DIHITUNG ULANG AGAR TIDAK ERROR)
   let totalKekurangan = 0;
   let totalKelebihan = 0;
+  
   dashboardData.forEach(school => {
     Object.values(school.mapel).forEach(m => {
       totalKekurangan += m.kurang || 0;
@@ -95,9 +95,6 @@ const DashboardStatistik: React.FC<DashboardProps> = ({
         <div>
           <h1 className="text-2xl font-bold text-cyan-400 print:text-black uppercase tracking-widest">Dashboard Distribusi Guru</h1>
           <p className="text-sm text-slate-400 print:text-gray-600 mt-1">Pemetaan & Pusat Relokasi Guru Tingkat Menengah</p>
-        </div>
-        <div className="mt-4 md:mt-0 flex items-center gap-2 bg-emerald-900/30 print:bg-transparent px-4 py-2 rounded-lg print:p-0">
-          <span className="text-emerald-400 print:text-black font-medium text-sm">Jam ideal guru 30 jam pelajaran (Min: 30, Maks: 37)</span>
         </div>
       </div>
 
@@ -209,11 +206,11 @@ const DashboardStatistik: React.FC<DashboardProps> = ({
 
       <div className="mt-6 bg-slate-900/50 p-5 rounded-xl border border-emerald-900/50 print:hidden">
          <h3 className="text-sm font-bold text-emerald-400 mb-3 flex items-center gap-2">
-            ✅ Daftar Instansi Yang Telah Menyimpan Form Kalkulator Guru
+            ✅ Daftar Instansi Yang Telah Mendata Rincian Guru Kelebihan
          </h3>
          <div className="flex flex-wrap gap-2">
             {sekolahSudahInput.length === 0 ? (
-               <span className="text-xs text-slate-500 italic">Belum ada sekolah yang menginput data ke database.</span>
+               <span className="text-xs text-slate-500 italic">Belum ada sekolah yang menginputkan tabel guru.</span>
             ) : (
                sekolahSudahInput.sort().map(sek => (
                   <span key={sek} className="bg-emerald-900/40 text-emerald-300 border border-emerald-700/50 px-3 py-1 rounded-full text-[11px] font-bold shadow-md">

@@ -1,10 +1,9 @@
 import React from 'react';
-import { calculateKebutuhan } from '../../utils/kalkulasiGuru';
 
 export interface ProcessedData {
   kabupaten: string;
   sekolah: string;
-  mapel: Record<string, { kurang: number; kelebihan: number; totalJam: number; guruAda: number }>;
+  mapel: Record<string, { kurang: number; kelebihan: number }>;
 }
 
 export interface SurplusTeacher {
@@ -69,10 +68,8 @@ const ModalDetailSekolah: React.FC<ModalProps> = ({
           <div className="space-y-3">
             {getSortedKekuranganMapels(viewDetailSekolah).map(m => {
               const data = viewDetailSekolah.mapel[m];
-              const isBK = m.toLowerCase().includes('bimbingan') || m.toLowerCase().includes('konseling') || m.toLowerCase() === 'bk';
               const kurang = data.kurang; 
               const isCritical = kurang > 1;
-              const labelSatuan = isBK ? 'Kelas' : 'Jam Pelajaran';
               
               return (
                 <div key={m} className={`bg-slate-900/50 print:bg-transparent p-4 rounded-lg border ${isCritical ? 'border-red-900/50 print:border-red-500' : 'border-amber-900/30 print:border-black'}`}>
@@ -83,13 +80,12 @@ const ModalDetailSekolah: React.FC<ModalProps> = ({
                     </span>
                   </p>
                   <p className="text-sm text-slate-400 print:text-gray-800">
-                    Saat ini memiliki beban <strong className="text-white print:text-black">{data.totalJam || 0} {labelSatuan}</strong>, namun hanya diampu oleh <strong className="text-white print:text-black">{data.guruAda || 0} Guru</strong>. <br/>
-                    (Jam ideal guru adalah 30 jam pelajaran).
+                    Berdasarkan data perhitungan sistem, saat ini sekolah mengalami kekurangan guru pada mata pelajaran ini.
                   </p>
                 </div>
               );
             })}
-            {getSortedKekuranganMapels(viewDetailSekolah).length === 0 && <p className="text-slate-500 print:text-gray-600 italic">Sekolah ini tidak mengalami kekurangan jam mengajar/guru.</p>}
+            {getSortedKekuranganMapels(viewDetailSekolah).length === 0 && <p className="text-slate-500 print:text-gray-600 italic">Sekolah ini tidak mengalami kekurangan guru.</p>}
           </div>
         </div>
 
@@ -99,24 +95,11 @@ const ModalDetailSekolah: React.FC<ModalProps> = ({
             {mapelKelebihan.map(m => {
               const data = viewDetailSekolah.mapel[m];
               const guruList = allSurplusTeachers.filter(t => t.sekolah === viewDetailSekolah.sekolah && t.bidangStudi === m);
-              
               const kelebihan = data.kelebihan; 
-              const { warningMessages, isBK } = calculateKebutuhan(m, data.totalJam || 0, data.guruAda || 0);
-              const labelSatuan = isBK ? 'Kelas' : 'Jam Pelajaran';
 
               return (
                 <div key={m} className="bg-slate-900/50 print:bg-transparent p-4 rounded-lg border border-emerald-900/30 print:border-black overflow-x-auto print:overflow-visible relative mt-8">
                   
-                  {warningMessages.length > 0 && (
-                     <div className="absolute -top-6 right-2 sm:right-4 flex flex-col gap-1 items-end z-10">
-                        {warningMessages.map((msg, idx) => (
-                           <div key={idx} className="bg-rose-900 border border-rose-500 shadow-xl px-3 py-1.5 rounded-lg text-rose-200 text-xs font-bold animate-bounce">
-                              ⚠️ ( {msg} )
-                           </div>
-                        ))}
-                     </div>
-                  )}
-
                   <div className="flex flex-col sm:flex-row justify-between items-start mb-4 pr-0 sm:pr-40 pt-4 sm:pt-0">
                     <div>
                       <p className="font-bold text-slate-200 print:text-black text-lg mb-1">
@@ -126,12 +109,11 @@ const ModalDetailSekolah: React.FC<ModalProps> = ({
                         </span>
                       </p>
                       <p className="text-sm text-slate-400 print:text-gray-800">
-                        Total beban {data.totalJam || 0} {labelSatuan}, namun diampu oleh {data.guruAda || 0} Guru. <br/>
-                        (Jam ideal guru adalah 30 jam pelajaran).
+                        Berdasarkan data perhitungan sistem, sekolah ini terdeteksi mengalami kelebihan guru. Berikut adalah daftar rincian guru yang bisa dimutasikan:
                       </p>
                     </div>
                   </div>
-                  
+
                   <table className="w-full text-left text-xs border border-slate-700 print:border-black mt-4">
                     <thead className="bg-slate-800 text-emerald-400 print:bg-gray-200 print:text-black text-center">
                       <tr>
