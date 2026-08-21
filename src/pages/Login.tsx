@@ -3,6 +3,7 @@
 // @ts-nocheck
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
+import { supabase } from "../supabaseClient";
 
 import logoJateng from "../assets/logo_jateng.png";
 import logoPena from "../assets/logo_pena.png";
@@ -20,58 +21,120 @@ export default function Login() {
 
     setLoadingMasuk(true);
 
-    let finalPayload = emailOrId.trim();
+    let finalPayload = emailOrId.trim().toLowerCase();
     const sandiBersih = password.trim();
+    
+    // 🌟 ANTI-ERROR 422 (Sandi Minimal 6 Karakter)
+    const sandiSupabase = sandiBersih.length < 6 ? `${sandiBersih}PENA86` : sandiBersih;
+    
+    // SISTEM INTELEJEN KONVERSI EMAIL
     let isNpsnMurni = false;
-
-    // SISTEM INTELEJEN KONVERSI (CHECKPOINT PROTECTION - TETAP UTUH 100%)
+    
     if (!finalPayload.includes("@")) {
-      isNpsnMurni = /^\d+$/.test(finalPayload);
+      isNpsnMurni = /^\d{8}$/.test(finalPayload); 
       
       if (isNpsnMurni) {
         finalPayload = `${finalPayload}@sekolah.pena.com`; 
-      } else if (finalPayload.toLowerCase() === "puthut") {
+      } else if (finalPayload === "puthut") {
         finalPayload = "puthutprihantoro86@gmail.com"; 
       } else {
-        finalPayload = `${finalPayload.toLowerCase()}@pena.com`;
+        finalPayload = `${finalPayload}@pena.com`;
       }
     }
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      // 1. COBA LOGIN LANGSUNG KE SUPABASE AUTH
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: finalPayload,
-        password: sandiBersih,
+        password: sandiSupabase,
       });
 
-      if (error) {
-        // JURUS BYPASS MUTLAK UNTUK SEKOLAH
-        if (isNpsnMurni && (error.message.includes("Invalid login credentials") || error.message.includes("User not found"))) {
-          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            email: finalPayload,
-            password: sandiBersih,
-          });
+      let userId = authData?.user?.id;
+
+      // 2. JIKA GAGAL (KARENA BELUM MIGRASI ATAU AKUN BARU)
+      if (authError) {
           
-          if (signUpError) throw signUpError;
+        // 🌟 SKENARIO A: AUTO-MIGRASI UNTUK AKUN EKSEKUTIF LAMA (master_users)
+        if (!isNpsnMurni) {
+            const rawUsername = emailOrId.trim();
+            const { data: masterData, error: masterError } = await supabase
+                .from('master_users')
+                .select('*')
+                .eq('username', rawUsername)
+                .eq('password', sandiBersih)
+                .maybeSingle();
+
+            if (masterData && !masterError) {
+                const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+                    email: finalPayload,
+                    password: sandiSupabase,
+                });
+
+                if (signUpError) {
+                    if (signUpError.message.includes("User already registered")) {
+                        throw new Error("Akun ini sudah termigrasi sebelumnya, namun kata sandi salah. Hubungi Admin untuk reset.");
+                    }
+                    throw signUpError;
+                }
+                userId = signUpData.user?.id;
+            } else {
+                throw authError; // Lempar ke catch jika di master lama juga tidak ada
+            }
+        }
+        
+        // 🌟 SKENARIO B: AUTO-REGISTRASI UNTUK SEKOLAH (NPSN)
+        else if (isNpsnMurni && (authError.message.includes("Invalid login credentials") || authError.message.includes("User not found"))) {
+            const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+                email: finalPayload,
+                password: sandiSupabase,
+            });
           
-          if (signUpData.user) {
-            const cleanNpsn = emailOrId.trim();
-            await supabase.from('profiles').insert([{ id: signUpData.user.id, role: 'SEKOLAH', nama_lengkap: `Sekolah ${cleanNpsn}`, nomor_induk: cleanNpsn, email: finalPayload }]);
-            await supabase.from('sekolah').insert([{ id: signUpData.user.id, user_id: signUpData.user.id, npsn: cleanNpsn, nama_sekolah: `Sekolah ${cleanNpsn}` }]);
-            
-            window.location.href = "/";
-            return;
-          }
+            if (signUpError) throw signUpError;
+            userId = signUpData.user?.id;
         } else {
-          throw error;
+            throw authError; 
         }
       }
 
-      if (data?.user) {
-        window.location.href = "/";
+      // 🌟 3. SISTEM AUTO-HEALING (MEMASTIKAN KTP / PROFIL BENAR-BENAR TERSIMPAN)
+      if (userId) {
+          const rawUsername = emailOrId.trim();
+          
+          // Cek apakah profil sudah ada
+          const { data: cekProfil } = await supabase.from('profiles').select('id').eq('id', userId).maybeSingle();
+          
+          if (!cekProfil) {
+              console.log("KTP belum ada, sistem mencoba membuatkan...");
+              
+              if (!isNpsnMurni) {
+                  const { data: masterData } = await supabase.from('master_users').select('*').eq('username', rawUsername).maybeSingle();
+                  if (masterData) {
+                      // 🌟 FIX: Menghapus kolom sekolah_binaan agar tidak ditolak oleh Database
+                      const { error: insertErr } = await supabase.from('profiles').insert([{ 
+                          id: userId, 
+                          role: masterData.role.toUpperCase(), 
+                          nama_lengkap: masterData.nama_lengkap, 
+                          nomor_induk: masterData.username, 
+                          email: finalPayload
+                      }]);
+                      if (insertErr) throw new Error(`Database menolak pembuatan profil: ${insertErr.message}`);
+                  }
+              } else {
+                  const cleanNpsn = rawUsername;
+                  const { error: insErr } = await supabase.from('profiles').insert([{ id: userId, role: 'SEKOLAH', nama_lengkap: `Sekolah ${cleanNpsn}`, nomor_induk: cleanNpsn, email: finalPayload }]);
+                  if (insErr) throw new Error(`Database menolak pembuatan profil sekolah: ${insErr.message}`);
+                  
+                  await supabase.from('sekolah').upsert([{ id: userId, user_id: userId, npsn: cleanNpsn, nama_sekolah: `Sekolah ${cleanNpsn}` }]);
+              }
+          }
+
+          // Lolos Uji Keamanan KTP -> Arahkan ke Dashboard
+          window.location.href = "/";
       }
+      
     } catch (error: any) {
-      alert("Akses Ditolak: Periksa kembali NPSN / Email / NIP dan Kata Sandi Anda!");
-      console.error("GOTRUE_REJECTION:", error);
+      alert(`Gagal Masuk:\n${error.message || 'Periksa kembali Username/NIP/NPSN dan Kata Sandi Anda!'}`);
+      console.error("SSO_REJECTION:", error);
     } finally {
       setLoadingMasuk(false);
     }
@@ -80,7 +143,6 @@ export default function Login() {
   return (
     <div className="min-h-screen w-full relative flex items-center justify-center p-6 font-sans overflow-hidden bg-slate-950 selection:bg-cyan-500 selection:text-white">
       
-      {/* 🌟 INJEKSI GAYA ANIMASI CSS UNTUK EFEK SCANNER TEKNOLOGI */}
       <style>
         {`
           @keyframes tech-scan {
@@ -95,26 +157,15 @@ export default function Login() {
         `}
       </style>
 
-      {/* 🌟 LATAR BELAKANG DASHBOARD_PENA & GARIS SCANNER */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-        {/* Gambar Latar Utama */}
-        <img 
-          src={dashboardBg} 
-          alt="Dashboard Background" 
-          className="w-full h-full object-cover object-top opacity-30 scale-105 transform filter contrast-125" 
-        />
-        {/* Overlay Gelap */}
+        <img src={dashboardBg} alt="Dashboard Background" className="w-full h-full object-cover object-top opacity-30 scale-105 transform filter contrast-125" />
         <div className="absolute inset-0 bg-linear-to-b from-slate-950/90 via-slate-900/70 to-slate-950/90" />
-        
-        {/* Garis Teknologi Bergerak (Scanner Laser) */}
         <div className="absolute top-0 left-0 w-full h-0.75 bg-cyan-400/80 shadow-[0_0_30px_8px_rgba(6,182,212,0.6)] animate-tech-scan z-10" />
       </div>
 
-      {/* Efek Cahaya Sudut */}
       <div className="absolute -top-32 -left-32 w-96 h-96 bg-cyan-500/10 rounded-full blur-[120px] pointer-events-none z-0" />
       <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-blue-600/10 rounded-full blur-[120px] pointer-events-none z-0" />
 
-      {/* KONTEN UTAMA LOGIN */}
       <div className="relative z-20 w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
         <div className="lg:col-span-7 flex flex-col items-center lg:items-start text-center lg:text-left space-y-6">
           <div className="flex items-center gap-4 px-4 py-2.5 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-inner backdrop-blur-md">
@@ -143,7 +194,6 @@ export default function Login() {
           </div>
 
           <div className="w-full max-w-md rounded-2xl overflow-hidden border border-slate-800/80 shadow-2xl bg-slate-900/40 p-2 backdrop-blur-sm group">
-            {/* 🌟 GAMBAR BANNER DIGANTI MENJADI DASHBOARD_PENA */}
             <img src={dashboardBg} alt="Dashboard PENA" className="w-full h-auto object-cover rounded-xl opacity-90 group-hover:opacity-100 transition-all duration-300 group-hover:scale-[1.01]" />
           </div>
         </div>
@@ -155,13 +205,13 @@ export default function Login() {
             <div className="border-b border-slate-800/80 pb-4">
               <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-cyan-400 block mb-1">• PORTAL GERBANG UTAMA</span>
               <h2 className="text-2xl font-black text-white">Otentikasi Pengguna</h2>
-              <p className="text-xs text-slate-400 mt-0.5 font-sans">Gunakan Email, NIP Pengawas, atau NPSN Sekolah</p>
+              <p className="text-xs text-slate-400 mt-0.5 font-sans">Gunakan NIP Pengawas, NPSN, atau Email</p>
             </div>
 
             <form onSubmit={handleMasuk} className="space-y-4">
               <div>
-                <label className="block text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 mb-1.5">EMAIL / NPSN / NIP</label>
-                <input type="text" required value={emailOrId} onChange={(e) => setEmailOrId(e.target.value)} placeholder="Contoh: puthutprihantoro..." className="w-full bg-slate-950/90 border border-slate-800 rounded-xl px-4 py-3.5 text-xs font-mono text-slate-100 placeholder-slate-600 focus:outline-none focus:border-cyan-500 transition-all shadow-inner" />
+                <label className="block text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 mb-1.5">USERNAME / NIP / NPSN</label>
+                <input type="text" required value={emailOrId} onChange={(e) => setEmailOrId(e.target.value)} placeholder="Contoh: 198311092009031008" className="w-full bg-slate-950/90 border border-slate-800 rounded-xl px-4 py-3.5 text-xs font-mono text-slate-100 placeholder-slate-600 focus:outline-none focus:border-cyan-500 transition-all shadow-inner" />
               </div>
               
               <div>
@@ -195,40 +245,23 @@ export default function Login() {
                 disabled={loadingMasuk} 
                 className="w-full py-4 mt-6 bg-linear-to-r from-cyan-600 to-blue-700 hover:from-cyan-500 hover:to-blue-600 text-white font-black rounded-xl uppercase tracking-widest shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:shadow-[0_0_30px_rgba(6,182,212,0.7)] transition-all duration-300 transform hover:-translate-y-1 cursor-pointer border border-cyan-400/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
               >
-                {loadingMasuk ? 'MEMPROSES MASUK...' : 'MASUK'}
+                {loadingMasuk ? 'MEMPROSES MASUK...' : 'MASUK SEKARANG'}
               </button>
             </form>
 
             <div className="pt-4 border-t border-slate-800/80 text-center space-y-2.5">
-              <p className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">
-                Masyarakat Umum / Tamu?
-              </p>
-              
-              <Link
-                to="/publik"
-                className="w-full py-3 px-4 bg-linear-to-r from-emerald-600/20 to-teal-600/20 hover:from-emerald-600 hover:to-teal-600 text-emerald-400 hover:text-white border border-emerald-500/30 rounded-xl font-bold text-xs tracking-wide uppercase transition-all flex items-center justify-center gap-2 group shadow-lg cursor-pointer"
-              >
+              <p className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Masyarakat Umum / Tamu?</p>
+              <Link to="/publik" className="w-full py-3 px-4 bg-linear-to-r from-emerald-600/20 to-teal-600/20 hover:from-emerald-600 hover:to-teal-600 text-emerald-400 hover:text-white border border-emerald-500/30 rounded-xl font-bold text-xs tracking-wide uppercase transition-all flex items-center justify-center gap-2 group shadow-lg cursor-pointer">
                 <span className="text-base group-hover:scale-110 transition-transform">🌐</span>
                 <span>Masuk Portal Publik & Peringkat Mutu</span>
               </Link>
-
-              {/* 🌟 TOMBOL BARU: GENERATOR LAPORAN TRIWULAN */}
-              <Link 
-                to="/generator-laporan"
-                className="w-full mt-2 py-3 px-4 bg-slate-900 border border-slate-700 hover:border-slate-500 hover:bg-slate-800 rounded-xl font-bold text-xs tracking-wide uppercase text-slate-300 hover:text-white transition-all flex items-center justify-center gap-2 group shadow-md cursor-pointer"
-              >
+              <Link to="/generator-laporan" className="w-full mt-2 py-3 px-4 bg-slate-900 border border-slate-700 hover:border-slate-500 hover:bg-slate-800 rounded-xl font-bold text-xs tracking-wide uppercase text-slate-300 hover:text-white transition-all flex items-center justify-center gap-2 group shadow-md cursor-pointer">
                 <span className="text-base group-hover:scale-110 transition-transform">📄</span> 
                 <span>Alat Bantu Generator Laporan</span> 
               </Link>
             </div>
-            <Link 
-  to="/rekap-guru" 
-  className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-700 bg-slate-900/50 px-4 py-3 text-sm font-semibold text-slate-300 transition-all hover:bg-slate-800 hover:text-white"
->
-  📊 REKAP KEBUTUHAN GURU
-</Link>
 
-            <div className="pt-1 text-center"><span className="text-[10px] font-mono text-slate-500">Sistem PENA OS • Berlisensi Resmi Disdikbud</span></div>
+            <div className="pt-1 text-center"><span className="text-[10px] font-mono text-slate-500">Sistem PENA OS SSO • Berlisensi Resmi Disdikbud</span></div>
           </div>
         </div>
 

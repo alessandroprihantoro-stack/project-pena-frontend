@@ -6,6 +6,7 @@ interface FilterProps {
   fMapel: string; setFMapel: (v: string) => void;
   fStatus: string; setFStatus: (v: string) => void;
   fPensiun: string; setFPensiun: (v: string) => void;
+  fKeyword: string; setFKeyword: (v: string) => void; // 🌟 BARU: State untuk kata kunci pencarian
   listKabupatenValid: string[];
   listSekolahFilter: string[];
   listMapel: string[];
@@ -21,6 +22,18 @@ const FilterPencarian: React.FC<FilterProps> = (props) => {
          <h2 className="text-sm font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">🔍 Filter & Pencarian Buku Induk</h2>
          <button onClick={props.onReset} className="text-xs text-slate-400 hover:text-white underline font-medium">Reset Filter</button>
       </div>
+
+      {/* 🌟 BARU: Kotak Pencarian Teks (Nama / NIP) */}
+      <div className="mb-4">
+         <input 
+             type="text" 
+             placeholder="Ketik Nama Lengkap atau NIP Guru untuk mencari..." 
+             className="w-full bg-slate-900 border border-slate-600 text-white rounded-lg px-4 py-2.5 outline-none focus:border-emerald-500 shadow-inner transition-colors"
+             value={props.fKeyword}
+             onChange={(e) => props.setFKeyword(e.target.value)}
+         />
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <select className="bg-slate-900 border border-slate-600 text-slate-200 rounded-lg px-3 py-2 text-sm outline-none" value={props.fKabupaten} onChange={(e) => { props.setFKabupaten(e.target.value); props.setFSekolah(''); }}>
           <option value="">Semua Kabupaten</option>
@@ -51,5 +64,4 @@ const FilterPencarian: React.FC<FilterProps> = (props) => {
     </div>
   );
 };
-
 export default FilterPencarian;

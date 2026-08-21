@@ -6,6 +6,7 @@ export interface ProcessedData {
   mapel: Record<string, { kurang: number; kelebihan: number }>;
 }
 
+// 🌟 BARU: Extend interface untuk menangkap status Rekomendasi
 export interface SurplusTeacher {
   id: string | number;
   nama: string;
@@ -22,6 +23,8 @@ export interface SurplusTeacher {
   alamat: string;
   sekolah?: string;
   bulanTahunPensiun?: string;
+  is_rekomendasi_internal?: boolean;
+  alasanRekomendasi?: string;
 }
 
 interface ModalProps {
@@ -49,7 +52,6 @@ const ModalDetailSekolah: React.FC<ModalProps> = ({
   };
 
   const mapelKelebihan = mapelList.filter(m => (viewDetailSekolah.mapel[m]?.kelebihan || 0) > 0);
-
   const guruDiSekolahIni = allSurplusTeachers.filter(t => t.sekolah === viewDetailSekolah.sekolah);
   const totalGuruMutasi = guruDiSekolahIni.length;
 
@@ -97,7 +99,6 @@ const ModalDetailSekolah: React.FC<ModalProps> = ({
                   >
                      <span className={`font-semibold ${filterStatusPegawai === null ? 'text-teal-800' : 'text-slate-600'}`}>Tampilkan Semua</span>
                   </button>
-
                   {Object.entries(statusCounts).map(([status, count]) => {
                      const isSelected = filterStatusPegawai === status;
                      return (
@@ -161,10 +162,18 @@ const ModalDetailSekolah: React.FC<ModalProps> = ({
             {mapelKelebihan.map(m => {
               const data = viewDetailSekolah.mapel[m];
               
-              let guruList = allSurplusTeachers.filter(t => t.sekolah === viewDetailSekolah.sekolah && t.bidangStudi === m);
+              let guruList = allSurplusTeachers.filter(t => t.sekolah === viewDetailSekolah.sekolah && (t.bidangStudi === m || t.tugasMengajar === m));
+              
               if (filterStatusPegawai) {
                   guruList = guruList.filter(t => (t.statusPegawai?.trim() || 'Lainnya') === filterStatusPegawai);
               }
+
+              // 🌟 SORTING: Guru Prioritas Mutasi naik ke Atas
+              guruList.sort((a, b) => {
+                  const aRek = a.is_rekomendasi_internal ? 1 : 0;
+                  const bRek = b.is_rekomendasi_internal ? 1 : 0;
+                  return bRek - aRek;
+              });
 
               if (filterStatusPegawai && guruList.length === 0) return null;
 
@@ -189,7 +198,7 @@ const ModalDetailSekolah: React.FC<ModalProps> = ({
                     <thead className="bg-slate-800 text-emerald-400 print:bg-gray-200 print:text-black text-center">
                       <tr>
                         <th className="p-2 border border-slate-700 print:border-black">No</th>
-                        <th className="p-2 border border-slate-700 print:border-black">Nama</th>
+                        <th className="p-2 border border-slate-700 print:border-black min-w-40">Nama Lengkap</th>
                         <th className="p-2 border border-slate-700 print:border-black">NIP</th>
                         <th className="p-2 border border-slate-700 print:border-black bg-teal-900/30 print:bg-transparent">Status Pegawai</th>
                         <th className="p-2 border border-slate-700 print:border-black">Pangkat/Golongan</th>
@@ -200,25 +209,36 @@ const ModalDetailSekolah: React.FC<ModalProps> = ({
                         <th className="p-2 border border-slate-700 print:border-black text-amber-300">Rincian Tambahan</th>
                         <th className="p-2 border border-slate-700 print:border-black">Total Jam</th>
                         <th className="p-2 border border-slate-700 print:border-black">Pensiun</th>
-                        <th className="p-2 border border-slate-700 print:border-black">Domisili</th>
+                        <th className="p-2 border border-slate-700 print:border-black min-w-32">Domisili</th>
                       </tr>
                     </thead>
                     <tbody>
                       {guruList.map((g, index) => (
-                        <tr key={g.id} className="border-b border-slate-700/50 print:border-black hover:bg-slate-800/50 transition-colors">
-                          <td className="p-2 border-r border-slate-700 print:border-black text-center">{index + 1}</td>
-                          <td className="p-2 border-r border-slate-700 print:border-black font-medium">{g.nama}</td>
-                          <td className="p-2 border-r border-slate-700 print:border-black text-center">{g.nip}</td>
-                          <td className="p-2 border-r border-slate-700 print:border-black text-center font-bold text-teal-300 print:text-black">{g.statusPegawai}</td>
-                          <td className="p-2 border-r border-slate-700 print:border-black text-center">{g.pangkat}</td>
-                          <td className="p-2 border-r border-slate-700 print:border-black text-center">{g.ijasah}</td>
-                          <td className="p-2 border-r border-slate-700 print:border-black text-center">{g.bidangStudi}</td>
-                          <td className="p-2 border-r border-slate-700 print:border-black text-center">{g.jamMengajar}</td>
-                          <td className="p-2 border-r border-slate-700 print:border-black text-center">{g.jamTambahan}</td>
-                          <td className="p-2 border-r border-slate-700 print:border-black text-center italic text-amber-300/80">{g.rincianTugasTambahan || '-'}</td>
-                          <td className="p-2 font-bold text-emerald-200 print:text-black border-r border-slate-700 print:border-black text-center">{g.totalJam}</td>
-                          <td className="p-2 border-r border-slate-700 print:border-black text-center font-medium text-cyan-300 print:text-black">{g.bulanTahunPensiun || '-'}</td>
-                          <td className="p-2 border-r border-slate-700 print:border-black">{g.alamat}</td>
+                        <tr key={g.id} className={`border-b border-slate-700/50 print:border-black hover:bg-slate-800/50 transition-colors ${g.is_rekomendasi_internal ? 'bg-amber-900/10' : ''}`}>
+                          <td className="p-2 border-r border-slate-700 print:border-black text-center align-top">{index + 1}</td>
+                          
+                          <td className="p-2 border-r border-slate-700 print:border-black font-medium align-top">
+                              {g.nama}
+                              {/* 🌟 LENCANA REKOMENDASI PRIORITAS */}
+                              {g.is_rekomendasi_internal && (
+                                  <span className="text-[9px] text-amber-400 font-black uppercase mt-1.5 block leading-tight border-t border-amber-900/50 pt-1.5">
+                                      🌟 Prioritas Mutasi <br/>
+                                      {g.alasanRekomendasi && <span className="text-[8px] text-amber-200 font-normal italic normal-case">"{g.alasanRekomendasi}"</span>}
+                                  </span>
+                              )}
+                          </td>
+                          
+                          <td className="p-2 border-r border-slate-700 print:border-black text-center align-top">{g.nip}</td>
+                          <td className="p-2 border-r border-slate-700 print:border-black text-center font-bold text-teal-300 print:text-black align-top">{g.statusPegawai}</td>
+                          <td className="p-2 border-r border-slate-700 print:border-black text-center align-top">{g.pangkat}</td>
+                          <td className="p-2 border-r border-slate-700 print:border-black text-center align-top">{g.ijasah}</td>
+                          <td className="p-2 border-r border-slate-700 print:border-black text-center align-top">{g.bidangStudi}</td>
+                          <td className="p-2 border-r border-slate-700 print:border-black text-center align-top">{g.jamMengajar}</td>
+                          <td className="p-2 border-r border-slate-700 print:border-black text-center align-top">{g.jamTambahan}</td>
+                          <td className="p-2 border-r border-slate-700 print:border-black text-center italic text-amber-300/80 align-top">{g.rincianTugasTambahan || '-'}</td>
+                          <td className="p-2 font-bold text-emerald-200 print:text-black border-r border-slate-700 print:border-black text-center align-top">{g.totalJam}</td>
+                          <td className="p-2 border-r border-slate-700 print:border-black text-center font-medium text-cyan-300 print:text-black align-top">{g.bulanTahunPensiun || '-'}</td>
+                          <td className="p-2 border-r border-slate-700 print:border-black align-top">{g.alamat}</td>
                         </tr>
                       ))}
                       {guruList.length === 0 && !filterStatusPegawai && <tr><td colSpan={13} className="p-4 text-center text-rose-400 print:text-black italic">Admin sekolah belum menginputkan rincian nama guru pada mata pelajaran ini.</td></tr>}
@@ -230,6 +250,7 @@ const ModalDetailSekolah: React.FC<ModalProps> = ({
             {mapelKelebihan.length === 0 && <p className="text-slate-500 print:text-gray-600 italic">Sekolah ini tidak memiliki kelebihan guru.</p>}
           </div>
         </div>
+
       </div>
     </div>
   );

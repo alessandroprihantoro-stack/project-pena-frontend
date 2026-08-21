@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { supabase } from "../../supabaseClient";
 
 import bannerPena from "../../assets/banner_pena.png";
@@ -9,6 +10,7 @@ export default function DashboardAdmin() {
     sekolah: 0,
     pengawas: 0,
     praktikBaik: 0,
+    mutasiMenunggu: 0, // 🌟 FITUR BARU: Radar Mutasi
     loading: true
   });
 
@@ -20,7 +22,7 @@ export default function DashboardAdmin() {
           .from("sekolah")
           .select("*", { count: "exact", head: true });
 
-        // 2. Ping Radar: Total Pengawas (Dari tabel profiles)
+        // 2. Ping Radar: Total Pengawas
         const { count: countPengawas } = await supabase
           .from("profiles")
           .select("*", { count: "exact", head: true })
@@ -31,11 +33,18 @@ export default function DashboardAdmin() {
           .from("praktik_baik")
           .select("*", { count: "exact", head: true });
 
+        // 🌟 4. PING RADAR BARU: Deteksi Usulan Mutasi (Status: MENUNGGU)
+        const { count: countMutasi } = await supabase
+          .from("usulan_mutasi")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "MENUNGGU");
+
         // Update Radar UI
         setStats({
           sekolah: countSekolah || 0,
           pengawas: countPengawas || 0,
           praktikBaik: countPraktik || 0,
+          mutasiMenunggu: countMutasi || 0, // 🌟 Pasang hasil deteksi
           loading: false
         });
       } catch (error) {
@@ -74,6 +83,26 @@ export default function DashboardAdmin() {
           </div>
         </div>
       </div>
+
+      {/* 🌟 KOTAK PERINGATAN DARURAT (Hanya Muncul Jika Ada Antrean Mutasi) 🌟 */}
+      {!stats.loading && stats.mutasiMenunggu > 0 && (
+        <div className="bg-linear-to-r from-rose-600 to-rose-500 rounded-3xl p-1 shadow-[0_0_20px_rgba(225,29,72,0.3)] animate-pulse-slow">
+            <div className="bg-white p-6 rounded-[22px] flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-rose-100 rounded-full flex items-center justify-center text-2xl shrink-0">
+                        🚨
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-black text-rose-600">Peringatan: Ada {stats.mutasiMenunggu} Antrean Mutasi Guru!</h3>
+                        <p className="text-sm text-slate-500">Pengawas telah mengajukan simulasi mutasi untuk pemenuhan jam. Menunggu ACC (Persetujuan) dari Anda.</p>
+                    </div>
+                </div>
+                <Link to="/rekap-guru" className="px-6 py-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-lg transition-colors whitespace-nowrap text-sm text-center">
+                    Tinjau Sekarang ➔
+                </Link>
+            </div>
+        </div>
+      )}
 
       {/* RADAR STATISTIK CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -126,7 +155,7 @@ export default function DashboardAdmin() {
           <span>⚙️</span> Ruang Komando Utama
         </h3>
         <p className="text-slate-500 text-sm mt-3 leading-relaxed max-w-3xl">
-          Selamat datang di <strong className="text-slate-700">Pusat Kendali PENA Enterprise</strong>. Anda memegang otoritas penuh atas sistem. Gunakan navigasi di sebelah kiri untuk meregistrasi hak akses Pengawas, mengelola pangkalan data Sekolah, dan memonitor seluruh pengajuan Inovasi dari lapangan.
+          Selamat datang di <strong className="text-slate-700">Pusat Kendali PENA Enterprise</strong>. Anda memegang otoritas penuh atas sistem. Gunakan navigasi di sebelah kiri untuk meregistrasi hak akses Pengawas, mengelola pangkalan data Sekolah, memantau pergerakan Mutasi Guru, dan memonitor seluruh pengajuan Inovasi dari lapangan.
         </p>
       </div>
 

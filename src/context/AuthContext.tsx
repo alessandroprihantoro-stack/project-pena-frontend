@@ -4,7 +4,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../supabaseClient';
 
-export type UserRole = 'ADMIN' | 'PENGAWAS' | 'SEKOLAH';
+export type UserRole = 'ADMIN' | 'CABDIN' | 'SUPER_ADMIN' | 'PENGAWAS' | 'SEKOLAH';
 
 export interface Profile {
   id: string;
@@ -13,6 +13,7 @@ export interface Profile {
   nomor_induk: string;
   email: string;
   avatar_url?: string;
+  sekolah_binaan?: string[]; 
 }
 
 interface AuthContextType {
@@ -31,8 +32,6 @@ const AuthContext = createContext<AuthContextType>({
   signOut: async () => {},
 });
 
-// 🛡️ CHECKPOINT PROTECTION (SINGLE FLIGHT MODULE GUARD):
-// Tipe data dipertegas menjadi Promise<Profile | null> agar TypeScript puas
 let activeFetchPromise: Promise<Profile | null> | null = null;
 let cachedUserId: string | null = null;
 let cachedProfileData: Profile | null = null;
@@ -76,16 +75,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const data = await activeFetchPromise;
       if (!data) {
-        console.warn("[Satelit PENA]: Akun valid, tapi belum punya KTP di tabel profiles!");
+        console.warn("[Satelit PENA]: Akun valid, tapi belum punya profil!");
         setProfile(null);
         cachedProfileData = null;
       } else {
-        console.log("[Satelit PENA]: KTP Terverifikasi ->", data);
-        setProfile(data);
-        cachedProfileData = data;
+        console.log("[Satelit PENA]: Profil Terverifikasi ->", data);
+        setProfile(data as Profile);
+        cachedProfileData = data as Profile;
       }
     } catch (error: any) {
-      console.error("[Satelit PENA Error]: Gagal menarik KTP:", error.message || error);
+      console.error("[Satelit PENA Error]: Gagal menarik profil:", error.message || error);
       setProfile(null);
       cachedUserId = null;
       cachedProfileData = null;
@@ -99,6 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let isMounted = true;
 
     const initAuth = async () => {
+      // 🌟 FULL SUPABASE AUTH (SINGLE SIGN-ON) - Jalur bypass lama dihapus
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user && isMounted) {
@@ -115,10 +115,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     initAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    const { data } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!isMounted) return;
-
         if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') return;
 
         if (session?.user) {
@@ -134,22 +133,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
     );
+    const subscription = data.subscription;
 
     return () => {
       isMounted = false;
-      subscription.unsubscribe();
+      if (subscription) subscription.unsubscribe();
     };
   }, []);
 
   const logout = async () => {
     setLoading(true);
+    
+    // Hapus sisa-sisa cache bypass lama jika masih menempel di browser user
+    localStorage.removeItem('pena_executive_session'); 
+    
     cachedUserId = null;
     cachedProfileData = null;
     activeFetchPromise = null;
+    
     await supabase.auth.signOut();
+    
     setUser(null);
     setProfile(null);
     setLoading(false);
+    
+    window.location.href = "/login";
   };
 
   return (

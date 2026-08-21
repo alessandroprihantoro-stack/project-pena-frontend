@@ -208,7 +208,7 @@ export default function DashboardPengawas() {
     fetchInteraksi();
   };
 
-  useEffect(() => { fetchSemuaDataMaster(); }, [profile, filterKategori, pilihKategoriPrestasi, pilihJenisPrestasi]); // Trigger re-fetch jika filter berubah
+  useEffect(() => { fetchSemuaDataMaster(); }, [profile, filterKategori, pilihKategoriPrestasi, pilihJenisPrestasi]); 
 
   const handleReviewBukti = (url?: string | null) => {
     if (!url) { alert("Tautan karya tidak terdeteksi."); return; }
@@ -249,7 +249,6 @@ export default function DashboardPengawas() {
   const prestasiMenunggu = listPrestasi.filter(p => p.status_validasi === 'MENUNGGU');
   let prestasiTerfilter = listPrestasi.filter(p => p.status_validasi === 'DISETUJUI');
 
-  // 🌟 LOGIKA PENYARINGAN SUPER CERDAS (Diterapkan di Pengawas)
   if (filterKategori === 'LOMBA') {
     prestasiTerfilter = prestasiTerfilter.filter(pr => { 
       const val = String(pr.jalur || pr.kategori || pr.jenis_prestasi || pr.jenis || '').toUpperCase(); 
@@ -262,7 +261,6 @@ export default function DashboardPengawas() {
     prestasiTerfilter = prestasiTerfilter.filter(pr => { const val = String(pr.jalur || pr.kategori || pr.jenis_prestasi || pr.jenis || pr.nama_prestasi || '').toUpperCase(); return val.includes('TKA') || val.includes('AKADEMIK') || val.includes('NILAI'); });
   }
 
-  // Filter Tambahan Kategori (Lebih Cerdas & Pemaaf)
   if ((filterKategori === 'SEMUA' || filterKategori === 'LOMBA') && pilihKategoriPrestasi !== "Semua") {
       const keywordKategori = pilihKategoriPrestasi.toLowerCase().trim();
       prestasiTerfilter = prestasiTerfilter.filter(pr => {
@@ -281,7 +279,6 @@ export default function DashboardPengawas() {
       });
   }
 
-  // Filter Tambahan Jenis Prestasi
   if ((filterKategori === 'SEMUA' || filterKategori === 'LOMBA') && pilihJenisPrestasi !== "Semua") {
       const keywordJenis = pilihJenisPrestasi.toLowerCase().trim();
       prestasiTerfilter = prestasiTerfilter.filter(pr => {
@@ -504,7 +501,8 @@ export default function DashboardPengawas() {
       {/* HEADER & PROFIL PENGAWAS TERPADU */}
       <div className="relative rounded-3xl overflow-hidden shadow-neo mb-6 border-4 border-black dark:border-2 dark:border-slate-800 dark:shadow-2xl w-full flex flex-col justify-end min-h-75 sm:min-h-100">
         <div className="absolute inset-0 z-0 pointer-events-none">
-          <img src={dashboardPena} alt="PENA Enterprise" className="w-full h-full object-cover object-center" />
+          {/* 🌟 REVISI: Mengganti background menjadi bannerPena */}
+          <img src={bannerPena} alt="PENA Enterprise" className="w-full h-full object-cover object-center" />
           <div className="absolute inset-0 bg-linear-to-t from-slate-950/90 via-slate-900/20 to-transparent dark:from-slate-950 dark:via-slate-900/50" />
         </div>
         

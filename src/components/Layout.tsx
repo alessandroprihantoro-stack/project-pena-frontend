@@ -8,6 +8,8 @@ import { useAuth, type UserRole } from "../context/AuthContext";
 import logoPena from "../assets/logo_pena.png";
 import logoJateng from "../assets/logo_jateng.png";
 import bgDashboardSekolah from "../assets/dashboard_pena.png";
+// 🌟 IMPORT FOTO DEFAULT PENGAWAS
+import fotoBapakLogin from "../assets/foto_bapak_login.png"; 
 
 interface NavItem {
   name: string;
@@ -45,10 +47,11 @@ export default function Layout() {
   }, [isDarkMode]);
   // ==============================
 
-  // Otak Pemisah Kamar (Menu Sidebar menyesuaikan KTP)
+  // Otak Pemisah Kamar (Menu Sidebar menyesuaikan Role)
   const getNavigation = (role?: UserRole): NavItem[] => {
     switch (role) {
       case "ADMIN":
+      case "SUPER_ADMIN":
         return [
           { name: "Pusat Kendali", path: "/admin/dashboard", icon: "⚡" },
           { name: "Kurasi Praktik Baik", path: "/admin/praktik-baik", icon: "💡" },
@@ -59,7 +62,6 @@ export default function Layout() {
         return [
           { name: "Pusat Komando", path: "/pengawas/dashboard", icon: "🎯" },
           { name: "Sekolah Binaan", path: "/pengawas/sekolah", icon: "📁" },
-          { name: "Log Jurnal Diri", path: "/pengawas/profil", icon: "📝" },
         ];
       case "CABDIN":
         return [
@@ -83,7 +85,6 @@ export default function Layout() {
     }
   };
 
-  // CHECKPOINT PROTECTION: Penyuntikan Menu Pusat Informasi secara dinamis & aman
   const rawNavItems = getNavigation(profile?.role);
   const navItems = [...rawNavItems];
   
@@ -92,8 +93,16 @@ export default function Layout() {
     navItems.push({ name: "Pusat Informasi", path: "/pusat-informasi", icon: "📢" });
   }
 
-  // 2. Menu Khusus Admin "Kelola Info"
-  if (profile?.role === 'ADMIN' && !navItems.some((i: { path?: string }) => i.path === '/admin/papan-informasi')) {
+  // 🌟 2. INJEKSI MENU REKAP GURU (Hanya untuk Pengawas, Cabdin, dan Admin) 🌟
+  const roleAman = profile?.role?.toUpperCase() || '';
+  const canViewRekap = ['ADMIN', 'SUPER_ADMIN', 'CABDIN', 'PENGAWAS'].includes(roleAman);
+  
+  if (canViewRekap && !navItems.some((i: { path?: string }) => i.path === '/rekap-guru')) {
+    navItems.push({ name: "Buku Induk Guru", path: "/rekap-guru", icon: "👥" }); 
+  }
+
+  // 🌟 3. Menu Kelola Info (DIBUKA UNTUK ADMIN DAN CABDIN) 🌟
+  if ((roleAman === 'ADMIN' || roleAman === 'SUPER_ADMIN' || roleAman === 'CABDIN') && !navItems.some((i: { path?: string }) => i.path === '/admin/papan-informasi')) {
     navItems.push({ name: "Kelola Info", path: "/admin/papan-informasi", icon: "⚙️" });
   }
 
@@ -212,26 +221,35 @@ export default function Layout() {
           })}
         </div>
 
-        {/* 🌟 LOGO PENA KEMBALI KE POSISI SEMULA 🌟 */}
+        {/* LOGO PENA */}
         <div className="mt-8 pt-6 border-t-2 border-dashed border-black/10 dark:border-slate-800/50 flex flex-col items-center justify-center opacity-60 hover:opacity-100 transition-all duration-300 cursor-default">
           <img src={logoPena} alt="PENA" className="w-20 h-auto object-contain drop-shadow-sm filter grayscale hover:grayscale-0 transition-all duration-300" />
           <span className="text-[9px] font-black tracking-widest uppercase mt-2 text-slate-400 dark:text-slate-500">PENA Enterprise OS</span>
         </div>
       </nav>
 
-      {/* FOOTER SIDEBAR - 🌟 LOGIKA AVATAR CERDAS 🌟 */}
+      {/* FOOTER SIDEBAR - AVATAR */}
       <div className={`p-6 pb-8 shrink-0 transition-colors ${
         isDarkMode ? "border-t border-blue-500/30 bg-linear-to-t from-[#030818] via-[#040c24]/90 to-transparent" : "border-t-2 border-black/10 bg-white"
       }`}>
         <div className="flex items-center gap-3 mb-6 px-2">
-          
-          {/* OTO-DETEKSI AVATAR: Jika CABDIN atau ADMIN, otomatis pakai logo Jateng. Jika Pengawas/Sekolah, pakai avatar_url atau huruf inisial */}
-          {profile?.role === 'CABDIN' || profile?.role === 'ADMIN' ? (
+          {/* 🌟 LOGIKA RENDER FOTO PROFIL DIPERBARUI 🌟 */}
+          {profile?.role === 'CABDIN' || profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN' ? (
             <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-white shadow-sm border-2 ${isDarkMode ? "border-cyan-400/60 shadow-[0_0_10px_rgba(6,182,212,0.3)] p-1" : "border-slate-300 p-1"}`}>
               <img src={logoJateng} alt="Jawa Tengah" className="w-full h-full object-contain drop-shadow-sm" />
             </div>
+          ) : profile?.role === 'PENGAWAS' ? (
+            <img 
+              src={profile?.avatar_url || fotoBapakLogin} 
+              alt="Pengawas" 
+              className={`w-10 h-10 rounded-full object-cover shrink-0 bg-white p-0.5 shadow-sm border-2 ${isDarkMode ? "border-cyan-400/60 shadow-[0_0_10px_rgba(6,182,212,0.3)]" : "border-black"}`} 
+            />
           ) : profile?.avatar_url ? (
-            <img src={profile.avatar_url} alt="" className={`w-10 h-10 rounded-full object-cover shrink-0 bg-white p-0.5 shadow-sm border-2 ${isDarkMode ? "border-cyan-400/60 shadow-[0_0_10px_rgba(6,182,212,0.3)]" : "border-black"}`} />
+            <img 
+              src={profile.avatar_url} 
+              alt="" 
+              className={`w-10 h-10 rounded-full object-cover shrink-0 bg-white p-0.5 shadow-sm border-2 ${isDarkMode ? "border-cyan-400/60 shadow-[0_0_10px_rgba(6,182,212,0.3)]" : "border-black"}`} 
+            />
           ) : (
             <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-black text-sm shrink-0 font-mono border-2 ${isDarkMode ? "bg-linear-to-br from-cyan-500 to-blue-600 shadow-[0_0_10px_rgba(6,182,212,0.4)] border-transparent" : "bg-blue-600 border-black shadow-sm"}`}>
               {profile?.nama_lengkap?.[0] || "U"}
@@ -324,7 +342,7 @@ export default function Layout() {
             <div>
               <h1 className={`text-sm font-bold flex items-center gap-2.5 tracking-wide ${isDarkMode ? "text-blue-100" : "text-slate-800"}`}>
                 <span className={`w-2.5 h-2.5 rounded-full animate-pulse shadow-sm ${isDarkMode ? "bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" : "bg-blue-600 shadow-blue-500/50"}`} /> 
-                {profile?.role === 'ADMIN' ? 'Superuser Markas' : profile?.role === 'PENGAWAS' ? 'Wilayah Pengawasan' : profile?.role === 'CABDIN' ? 'Eksekutif Cabang Dinas' : 'Satuan Pendidikan'}
+                {profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN' ? 'Superuser Markas' : profile?.role === 'PENGAWAS' ? 'Wilayah Pengawasan' : profile?.role === 'CABDIN' ? 'Eksekutif Cabang Dinas' : 'Satuan Pendidikan'}
               </h1>
             </div>
           </div>

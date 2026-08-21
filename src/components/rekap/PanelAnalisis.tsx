@@ -1,11 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { TeacherData } from './DashboardStatistik';
+import { supabase } from '../../supabaseClient';
+import { useAuth } from '../../context/AuthContext';
 
 export interface ProcessedData {
-  kabupaten: string;
-  kecamatan: string;
-  sekolah: string;
-  mapel: Record<string, { kurang: number; kelebihan: number }>;
+    kabupaten: string;
+    kecamatan: string;
+    sekolah: string;
+    mapel: Record<string, { kurang: number; kelebihan: number }>;
+}
+
+export interface ExtendedTeacherData extends TeacherData {
+    is_rekomendasi_internal?: boolean;
+    alasanRekomendasi?: string;
 }
 
 interface PanelProps {
@@ -15,317 +22,496 @@ interface PanelProps {
   setAnalisisSekolah: (val: string) => void;
   listSekolah: string[];
   spreadsheetData: ProcessedData[];
-  allTeachers: TeacherData[];
+  allTeachers: ExtendedTeacherData[];
   onTeacherClick: (t: TeacherData) => void;
 }
 
-const getJenjang = (namaSekolah: string): string => {
-  const upper = namaSekolah.toUpperCase();
-  if (upper.includes('SMK')) return 'SMK';
-  if (upper.includes('SLB')) return 'SLB';
-  return 'SMA'; 
-};
-
-const isMapelUmum = (mapel: string): boolean => {
-  const m = mapel.toUpperCase();
-  const mapelUmum = [
-    'AGAMA', 'PPKN', 'PKN', 'BAHASA INDONESIA', 'MATEMATIKA', 
-    'SEJARAH', 'BAHASA INGGRIS', 'SENI BUDAYA', 'PENJAS', 'OLAHRAGA', 
-    'FISIKA', 'KIMIA', 'BIOLOGI', 'EKONOMI', 'GEOGRAFI', 'SOSIOLOGI', 
-    'ANTROPOLOGI', 'BIMBINGAN KONSELING', 'INFORMATIKA', 'TIK', 
-    'BAHASA JAWA', 'BAHASA ARAB', 'BAHASA JEPANG', 'BAHASA JERMAN', 
-    'BAHASA MANDARIN', 'BAHASA PERANCIS', 'PRAKARYA', 'PKWU'
-  ];
-  return mapelUmum.some(u => m.includes(u));
-};
-
-// FITUR ENGINE 4: Menghitung Sisa Bulan Pensiun
-const getMonthsToRetire = (pensiunStr: string | undefined | null): number => {
-    if (!pensiunStr || !pensiunStr.includes('-')) return 999; // Jika kosong, dianggap masih lama
-    const [yyyy, mm] = pensiunStr.split('-');
-    const pensiunDate = new Date(parseInt(yyyy), parseInt(mm) - 1);
-    const currentDate = new Date(); // Waktu saat ini (Akan membaca tahun 2026 sesuai server BKN/Sistem)
-    
-    const diffMonths = (pensiunDate.getFullYear() - currentDate.getFullYear()) * 12 + (pensiunDate.getMonth() - currentDate.getMonth());
-    return diffMonths;
-};
-
-// FITUR ENGINE 4: Bobot Prioritas ASN (PNS > PPPK > PPPK Paruh > Non ASN)
-const getStatusWeight = (status: string | undefined): number => {
-    if (!status) return 4;
-    const s = status.toUpperCase();
-    if (s.includes('PNS')) return 1;
-    if (s === 'PPPK') return 2;
-    if (s.includes('PARUH WAKTU')) return 3;
-    return 4; // Non ASN
-};
-
-interface SimulationRecord {
-    teacher: TeacherData;
-    targetSekolah: string;
-    targetMapel: string;
+interface UsulanMutasi {
+    id: number;
+    id_guru: number | string;
+    nama_guru: string;
+    mapel: string;
+    sekolah_asal: string;
+    sekolah_tujuan: string;
+    npsn_tujuan: string;
+    status: string;
 }
 
-const PanelAnalisis: React.FC<PanelProps> = ({ showAnalisis, setShowAnalisis, analisisSekolah, setAnalisisSekolah, listSekolah, spreadsheetData, allTeachers, onTeacherClick }) => {
+interface MasterSekolahSimple {
+    npsn: string;
+    nama_sekolah: string;
+}
+
+const calculateBKEkuivalen = (inputVal: number): number => {
+    if (inputVal === 0) return 0;
+    if (inputVal <= 50) {
+        if (inputVal >= 5) return 24 + ((inputVal - 5) * 2);
+        else return Math.round((inputVal / 5) * 24);
+    } else {
+        if (inputVal >= 150) {
+            const surplusSiswa = inputVal > 160 ? inputVal - 160 : 0;
+            const surplusRombel = Math.floor(surplusSiswa / 32); 
+            return 24 + (surplusRombel * 2);
+        } else {
+            return Math.round((inputVal / 160) * 24);
+        }
+    }
+};
+
+const getJamUtama = (t: TeacherData): number => {
+    const isBK = t.bidangStudi?.toUpperCase().includes('KONSELING') || 
+                 t.bidangStudi?.toUpperCase().includes('BIMBINGAN') || 
+                 t.bidangStudi?.toUpperCase() === 'BK' || 
+                 t.bidangStudi?.toUpperCase() === 'BP/BK';
+    const jamRaw = Number(t.jamMengajar) || 0;
+    return (isBK && jamRaw > 0) ? calculateBKEkuivalen(jamRaw) : jamRaw;
+};
+
+const PanelAnalisis: React.FC<PanelProps> = ({ 
+  showAnalisis, setShowAnalisis, analisisSekolah, setAnalisisSekolah, 
+  listSekolah, spreadsheetData, allTeachers, onTeacherClick 
+}) => {
+  const { profile } = useAuth();
+  const userRole = String(profile?.role).toLowerCase();
+  const isCabdinOrAdmin = userRole === 'cabdin' || userRole === 'super_admin';
   
-  const [simulations, setSimulations] = useState<SimulationRecord[]>([]);
+  const [antrean, setAntrean] = useState<UsulanMutasi[]>([]);
+  const [masterSekolah, setMasterSekolah] = useState<MasterSekolahSimple[]>([]);
+  const [simulasiModal, setSimulasiModal] = useState<{isOpen: boolean, teacher: ExtendedTeacherData | null}>({isOpen: false, teacher: null});
+  const [targetSekolah, setTargetSekolah] = useState('');
+  
+  const [expandedKandidatGuru, setExpandedKandidatGuru] = useState<Record<string, boolean>>({});
+  const [expandedKandidatSekolah, setExpandedKandidatSekolah] = useState<Record<string, boolean>>({});
+
+  const fetchAntreanManual = async () => {
+      try {
+          const { data, error } = await supabase.from('usulan_mutasi').select('*').eq('status', 'MENUNGGU').order('created_at', { ascending: false });
+          if (!error && data) setAntrean(data as UsulanMutasi[]);
+      } catch (err) { console.error(err); }
+  };
+
+  useEffect(() => {
+      let isMounted = true;
+      const loadPanelData = async () => {
+          if (!showAnalisis) return;
+          try {
+              const { data: antreanData, error: antreanErr } = await supabase.from('usulan_mutasi').select('*').eq('status', 'MENUNGGU').order('created_at', { ascending: false });
+              if (!antreanErr && antreanData && isMounted) setAntrean(antreanData as UsulanMutasi[]);
+          } catch (err) { console.error(err); }
+
+          try {
+              const { data: sekolahData, error: sekolahErr } = await supabase.from('master_sekolah').select('npsn, nama_sekolah');
+              if (!sekolahErr && sekolahData && isMounted) setMasterSekolah(sekolahData as MasterSekolahSimple[]);
+          } catch (err) { console.error(err); }
+      };
+      loadPanelData();
+      return () => { isMounted = false; };
+  }, [showAnalisis]);
 
   if (!showAnalisis) return null;
-  const schoolData = spreadsheetData.find(d => d.sekolah === analisisSekolah);
-  const targetJenjang = analisisSekolah ? getJenjang(analisisSekolah) : '';
 
-  const handleAddSimulation = (e: React.MouseEvent, teacher: TeacherData, mapel: string) => {
-      e.stopPropagation(); 
-      setSimulations(prev => [...prev, { teacher, targetSekolah: analisisSekolah, targetMapel: mapel }]);
+  const dataSekolah = spreadsheetData.find(d => d.sekolah === analisisSekolah);
+  const teachersInSchool = allTeachers.filter(t => t.sekolah === analisisSekolah);
+
+  // 🌟 SORTIR PERMANEN: Guru Rekomendasi wajib di urutan 1
+  teachersInSchool.sort((a, b) => {
+      const aRek = a.is_rekomendasi_internal ? 1 : 0;
+      const bRek = b.is_rekomendasi_internal ? 1 : 0;
+      return bRek - aRek;
+  });
+
+  const handleAjukanMutasi = async () => {
+      if(!simulasiModal.teacher || !targetSekolah) return;
+      const t = simulasiModal.teacher;
+      const targetData = masterSekolah.find(s => s.nama_sekolah === targetSekolah);
+      
+      try {
+          const { error } = await supabase.from('usulan_mutasi').insert({
+              id_guru: t.id,
+              nama_guru: t.nama,
+              mapel: t.tugasMengajar || t.bidangStudi || '-',
+              sekolah_asal: t.sekolah,
+              sekolah_tujuan: targetSekolah,
+              npsn_tujuan: targetData?.npsn || '',
+              status: 'MENUNGGU'
+          });
+          if(error) throw error;
+          alert("✅ Simulasi Mutasi berhasil diajukan ke Cabdin!");
+          setSimulasiModal({isOpen: false, teacher: null});
+          setTargetSekolah('');
+          fetchAntreanManual();
+      } catch(err: unknown) {
+          if (err instanceof Error) alert("❌ Gagal mengajukan: " + err.message);
+      }
   };
 
-  const handleRemoveSimulation = (e: React.MouseEvent, teacherId: string | number) => {
-      e.stopPropagation();
-      setSimulations(prev => prev.filter(s => s.teacher.id !== teacherId));
+  const handleAccMutasi = async (usulan: UsulanMutasi) => {
+      if(!window.confirm(`✅ Yakin MENYETUJUI mutasi:\n${usulan.nama_guru}\nKe: ${usulan.sekolah_tujuan}?`)) return;
+      try {
+          const { error: err1 } = await supabase.from('usulan_mutasi').update({status: 'DISETUJUI'}).eq('id', usulan.id);
+          if (err1) throw err1;
+          
+          const { error: err2 } = await supabase.from('guru_kelebihan').update({ sekolah: usulan.sekolah_tujuan, npsn: usulan.npsn_tujuan }).eq('id', usulan.id_guru);
+          if (err2) throw err2;
+
+          alert("✅ Mutasi Disetujui dan Dieksekusi Permanen!");
+          window.location.reload();
+      } catch (err: unknown) { 
+          if (err instanceof Error) alert("❌ Terjadi kesalahan: " + err.message); 
+      }
   };
 
-  const simulatedTeacherIds = simulations.map(s => s.teacher.id);
+  const handleTolakMutasi = async (usulan: UsulanMutasi) => {
+      if(!window.confirm(`❌ Yakin MENOLAK mutasi ${usulan.nama_guru}?`)) return;
+      try {
+          const { error } = await supabase.from('usulan_mutasi').update({status: 'DITOLAK'}).eq('id', usulan.id);
+          if (error) throw error;
+          alert("❌ Mutasi Ditolak.");
+          fetchAntreanManual();
+      } catch (err: unknown) { 
+          if (err instanceof Error) alert("❌ Terjadi kesalahan: " + err.message); 
+      }
+  };
+
+  const mapelKurang = dataSekolah ? Object.entries(dataSekolah.mapel).filter((item) => item[1].kurang > 0) : [];
+  const mapelSurplusCombined = new Set<string>();
+
+  if (dataSekolah) {
+      Object.entries(dataSekolah.mapel).forEach(([m, val]) => {
+          if (val.kelebihan > 0) mapelSurplusCombined.add(m.toUpperCase());
+      });
+  }
+
+  teachersInSchool.forEach(t => {
+      // 🌟 JALUR VIP SURPLUS: Guru rekomendasi otomatis masuk radar Surplus
+      if (t.is_rekomendasi_internal) {
+          const m = t.tugasMengajar || t.bidangStudi;
+          if (m) mapelSurplusCombined.add(m.toUpperCase());
+      }
+      const jam = getJamUtama(t);
+      if (jam > 0 && jam < 24) {
+          const m = t.tugasMengajar || t.bidangStudi;
+          if (m) mapelSurplusCombined.add(m.toUpperCase());
+      }
+  });
+
+  const combinedSurplusArray = Array.from(mapelSurplusCombined).sort();
 
   return (
-    <div className="bg-slate-800 p-6 rounded-xl border-2 border-amber-500 shadow-2xl mb-6 animate-fade-in-up">
+    <div className="bg-slate-900 border border-amber-500/30 p-6 rounded-xl shadow-2xl mb-8 animate-fade-in-up">
       <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
-          <div>
-              <h2 className="text-xl font-black text-amber-400 uppercase tracking-widest flex items-center gap-2">💡 Analisis Kebutuhan & Simulasi Mutasi</h2>
-              <p className="text-xs text-slate-400 mt-1">Geo-Mapping, Lintas Jenjang, & Prioritas Skoring (ASN + Usia)</p>
-          </div>
-          <div className="flex gap-3">
-              {simulations.length > 0 && (
-                  <button onClick={() => setSimulations([])} className="text-xs bg-rose-900/50 border border-rose-500 text-rose-200 hover:bg-rose-600 hover:text-white px-3 py-1.5 rounded font-bold transition-colors shadow-lg">
-                      🗑️ RESET SIMULASI ({simulations.length})
-                  </button>
-              )}
-              <button onClick={() => setShowAnalisis(false)} className="text-xs text-slate-400 hover:text-white bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded font-bold transition-colors">Tutup Panel</button>
-          </div>
+        <h2 className="text-xl font-black text-amber-400 uppercase tracking-widest flex items-center gap-2">
+            💡 Analisis Kebutuhan & Simulasi Mutasi
+        </h2>
+        <button onClick={() => setShowAnalisis(false)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded font-bold transition-colors">Tutup Panel</button>
       </div>
+
+      {isCabdinOrAdmin && antrean.length > 0 && (
+          <div className="mb-8 bg-indigo-950/40 border border-indigo-500/50 p-5 rounded-xl shadow-inner animate-pulse-slow">
+              <h3 className="text-sm font-black text-indigo-300 uppercase tracking-widest mb-4 flex items-center gap-2">
+                  📥 Kotak Masuk: Pengajuan Mutasi ({antrean.length})
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {antrean.map(u => (
+                      <div key={u.id} className="bg-slate-900 border border-indigo-800 p-4 rounded-lg flex flex-col justify-between shadow-lg">
+                          <div className="mb-4">
+                              <strong className="text-white text-lg block">{u.nama_guru}</strong>
+                              <span className="text-xs text-slate-400 bg-slate-800 px-2 py-0.5 rounded">{u.mapel}</span>
+                              <div className="mt-3 text-sm flex flex-col gap-1">
+                                  <div className="flex items-center gap-2"><span className="text-rose-400">Dari:</span> <span className="text-slate-200">{u.sekolah_asal}</span></div>
+                                  <div className="flex items-center gap-2"><span className="text-emerald-400">Ke:</span> <span className="text-slate-200 font-bold">{u.sekolah_tujuan}</span></div>
+                              </div>
+                          </div>
+                          <div className="flex gap-2">
+                              <button onClick={() => handleAccMutasi(u)} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded text-xs font-black shadow-lg">✅ ACC / SETUJUI</button>
+                              <button onClick={() => handleTolakMutasi(u)} className="flex-1 bg-rose-900 hover:bg-rose-700 text-rose-300 hover:text-white py-2 rounded text-xs font-bold border border-rose-800">❌ TOLAK</button>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </div>
+      )}
 
       <div className="mb-6">
-          <label className="block text-sm font-bold text-slate-300 mb-2">Pilih Sekolah yang Ingin Dianalisis:</label>
-          <select className="w-full max-w-md bg-slate-900 border border-amber-600/50 text-slate-200 rounded-lg px-4 py-2 text-sm outline-none shadow-inner" value={analisisSekolah} onChange={(e) => setAnalisisSekolah(e.target.value)}>
-              <option value="">-- Pilih Sekolah --</option>
-              {listSekolah.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+        <label className="block text-sm font-bold text-slate-300 mb-2">Pilih Sekolah yang Ingin Dianalisis & Disimulasikan:</label>
+        <select value={analisisSekolah} onChange={(e) => setAnalisisSekolah(e.target.value)} className="w-full md:w-1/2 bg-slate-950 border border-amber-600/50 text-white rounded-lg px-4 py-3 outline-none focus:border-amber-400 font-bold shadow-inner">
+          <option value="">-- Ketuk Untuk Memilih Sekolah --</option>
+          {listSekolah.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
       </div>
 
-      {analisisSekolah && schoolData && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              
-              {/* === KOLOM 1: DAFTAR KEKURANGAN === */}
-              <div className="bg-slate-900/50 p-5 rounded-xl border border-rose-900/30">
-                  <div className="mb-4 border-b border-rose-900/50 pb-2 flex justify-between items-end">
-                      <h3 className="text-rose-400 font-bold text-lg flex items-center gap-2">🔻 Daftar Kekurangan Guru</h3>
-                      <div className="flex flex-col items-end gap-1">
-                         <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest border border-cyan-700 bg-cyan-900/30 px-2 py-0.5 rounded">JENJANG {targetJenjang}</span>
-                         <span className="text-xs text-indigo-300 font-bold bg-indigo-900/30 px-2 py-1 rounded">📍 Target: Kec. {schoolData.kecamatan}</span>
-                      </div>
+      {analisisSekolah && (
+        <div className="animate-fade-in space-y-6">
+          {!dataSekolah && (
+              <div className="bg-rose-950/40 border border-rose-800 text-rose-300 p-4 rounded-lg flex items-center gap-3">
+                  <span className="text-2xl">⚠️</span>
+                  <div>
+                      <strong className="block">Data Spreadsheet Pemetaan Belum Siap / Gagal Terbaca!</strong>
+                      <span className="text-xs">Sistem tidak dapat menarik data defisit/surplus dari Google Sheets untuk sekolah ini. Namun Anda tetap bisa melakukan simulasi mutasi dari data riil di bawah ini.</span>
                   </div>
-                  {Object.entries(schoolData.mapel).filter((entry) => entry[1].kurang > 0).length === 0 ? (
-                      <p className="text-slate-500 italic text-sm">Tidak ada kekurangan guru di sekolah ini.</p>
-                  ) : (
-                      Object.entries(schoolData.mapel).filter((entry) => entry[1].kurang > 0).map(([mapel, data]) => {
-                          
-                          const mapelIsUmum = isMapelUmum(mapel);
-                          
-                          const currentSimulations = simulations.filter(s => s.targetSekolah === analisisSekolah && s.targetMapel === mapel);
-                          const sisaKurang = data.kurang - currentSimulations.length;
+              </div>
+          )}
 
-                          const effectiveSurplusSchools = spreadsheetData.filter(d => {
-                              if (d.sekolah === analisisSekolah) return false;
-                              const originalSurplus = d.mapel[mapel]?.kelebihan || 0;
-                              const simulatedAwayFromD = simulations.filter(s => s.teacher.sekolah === d.sekolah && s.teacher.bidangStudi === mapel).length;
-                              return (originalSurplus - simulatedAwayFromD) > 0;
-                          }).map(d => d.sekolah);
-
-                          const recommendedTeachers = allTeachers.filter(t => {
-                              if (t.bidangStudi !== mapel) return false;
-                              if (!effectiveSurplusSchools.includes(t.sekolah || '')) return false;
-                              if (simulatedTeacherIds.includes(t.id)) return false; 
-
-                              // LOGIKA ENGINE 2: LINTAS JENJANG
-                              const guruJenjang = getJenjang(t.sekolah || '');
-                              if (!mapelIsUmum && guruJenjang !== targetJenjang) return false;
-
-                              // LOGIKA ENGINE 4: FILTER MASA PENSIUN (SEMBUNYIKAN JIKA SISA <= 12 BULAN / 1 TAHUN)
-                              const monthsLeft = getMonthsToRetire(t.bulanTahunPensiun);
-                              if (monthsLeft <= 12) return false; // Ditolak dari daftar rekomendasi mutasi
-
-                              return true;
-                          }).sort((a, b) => {
-                              // LOGIKA ENGINE 1: PRIORITAS KECAMATAN TERDEKAT
-                              const aMatch = a.kecamatan === schoolData.kecamatan;
-                              const bMatch = b.kecamatan === schoolData.kecamatan;
-                              if (aMatch !== bMatch) return aMatch ? -1 : 1;
-
-                              // LOGIKA ENGINE 4: PRIORITAS STATUS ASN
-                              const weightA = getStatusWeight(a.statusPegawai);
-                              const weightB = getStatusWeight(b.statusPegawai);
-                              return weightA - weightB;
-                          });
-
-                          return (
-                              <div key={mapel} className="mb-4 bg-slate-800 rounded-lg p-4 border-l-4 border-rose-500 shadow-md">
-                                  <div className="flex justify-between items-center mb-2 border-b border-slate-700 pb-2">
-                                      <span className="font-bold text-slate-200 text-sm">
-                                          {mapel} 
-                                          {!mapelIsUmum && <span className="ml-2 text-[8px] bg-red-900/50 text-red-300 px-1 py-0.5 rounded border border-red-700" title="Mapel Kejuruan/Khusus (Tidak bisa lintas jenjang)">🔒 KHUSUS {targetJenjang}</span>}
-                                      </span>
+          {dataSekolah && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                  
+                  {/* BLOK DEFISIT */}
+                  <div className="bg-rose-950/20 border border-rose-900/50 p-5 rounded-xl shadow-inner">
+                      <h4 className="text-sm font-black text-rose-400 uppercase tracking-widest border-b border-rose-900/50 pb-2 mb-4">📉 Kekurangan Guru (Defisit)</h4>
+                      {mapelKurang.length === 0 ? ( <div className="text-slate-500 italic text-sm text-center py-4">Tidak ada kekurangan guru.</div> ) : (
+                          <ul className="space-y-4">
+                              {mapelKurang.map(([namaMapel, val]) => {
+                                  const kandidatGuru = allTeachers.filter(t => {
+                                      if (t.sekolah === analisisSekolah) return false;
                                       
-                                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${sisaKurang <= 0 ? 'bg-emerald-900/50 text-emerald-400 border border-emerald-500' : 'bg-rose-900/50 text-rose-300'}`}>
-                                          Kurang {data.kurang} {currentSimulations.length > 0 && ` ➡️ SISA: ${sisaKurang}`}
-                                      </span>
-                                  </div>
+                                      const m = (t.bidangStudi || t.tugasMengajar || '').toUpperCase();
+                                      if (m !== namaMapel.toUpperCase()) return false;
+                                      
+                                      const entrySheet = Object.entries(spreadsheetData.find(d => d.sekolah === t.sekolah)?.mapel || {}).find(([k]) => k.toUpperCase() === m);
+                                      const schoolSurplus = entrySheet ? entrySheet[1].kelebihan : 0;
+                                      
+                                      const jamUtama = getJamUtama(t);
+                                      const isKurangJam = jamUtama > 0 && jamUtama < 24;
+                                      
+                                      // 🌟 JALUR VIP: Guru Rekomendasi Pasti Lolos Filter!
+                                      return schoolSurplus > 0 || isKurangJam || t.is_rekomendasi_internal;
+                                  }).sort((a, b) => {
+                                      // 🌟 SORTIR PERMANEN: Guru Rekomendasi ke Atas
+                                      const aRek = a.is_rekomendasi_internal ? 1 : 0;
+                                      const bRek = b.is_rekomendasi_internal ? 1 : 0;
+                                      if (bRek !== aRek) return bRek - aRek;
+                                      
+                                      const aKecMatch = a.kecamatan === dataSekolah.kecamatan ? 1 : 0;
+                                      const bKecMatch = b.kecamatan === dataSekolah.kecamatan ? 1 : 0;
+                                      return bKecMatch - aKecMatch; 
+                                  });
 
-                                  {currentSimulations.length > 0 && (
-                                      <div className="bg-indigo-900/40 p-3 rounded mb-3 border border-indigo-500/50 shadow-inner">
-                                          <p className="text-[10px] text-indigo-300 font-bold uppercase mb-2">🔄 Draft Simulasi Mutasi (Pemenuhan):</p>
-                                          <ul className="space-y-2">
-                                              {currentSimulations.map(sim => (
-                                                  <li key={sim.teacher.id} className="text-xs bg-slate-900/80 p-2 rounded flex justify-between items-center border border-indigo-500/30">
-                                                      <span>
-                                                          <strong className="text-amber-300">{sim.teacher.nama}</strong><br/>
-                                                          <span className="text-[9px] text-slate-400">Ditarik dari: {sim.teacher.sekolah}</span>
-                                                      </span>
-                                                      <button onClick={(e) => handleRemoveSimulation(e, sim.teacher.id)} className="bg-rose-600/80 hover:bg-rose-500 text-white text-[9px] px-2 py-1 rounded font-bold shadow-sm">❌ BATAL</button>
-                                                  </li>
-                                              ))}
-                                          </ul>
+                                  const isExpandedGuru = expandedKandidatGuru[namaMapel];
+                                  const displayedKandidat = isExpandedGuru ? kandidatGuru : kandidatGuru.slice(0, 3);
+
+                                  return (
+                                  <li key={namaMapel} className="bg-rose-900/20 rounded-lg border border-rose-800/30 overflow-hidden">
+                                      <div className="flex justify-between items-center px-4 py-3 bg-rose-950/40 border-b border-rose-900/50">
+                                          <span className="text-rose-100 font-bold">{namaMapel}</span>
+                                          <span className="bg-rose-600 text-white text-xs font-black px-2 py-1 rounded">Butuh {val.kurang}</span>
                                       </div>
-                                  )}
-
-                                  <div className="bg-slate-900 p-3 rounded mt-2 relative">
-                                      <div className="flex justify-between items-center mb-2">
-                                        <p className="text-[10px] text-emerald-400 font-bold uppercase">Rekomendasi Kandidat Lintas Instansi:</p>
-                                        <span className="text-[8px] text-slate-500 italic">*Pensiun &lt; 1 thn disembunyikan</span>
-                                      </div>
-                                      {recommendedTeachers.length > 0 ? (
-                                          <ul className="space-y-2">
-                                              {recommendedTeachers.map(t => {
-                                                  const isMatchKecamatan = t.kecamatan && schoolData.kecamatan && t.kecamatan === schoolData.kecamatan;
-                                                  const guruJenjang = getJenjang(t.sekolah || '');
-                                                  const isLintasJenjang = guruJenjang !== targetJenjang;
-                                                  const isASN = t.statusPegawai && (t.statusPegawai.includes('PNS') || t.statusPegawai.includes('PPPK'));
-
-                                                  return (
-                                                  <li key={t.id} onClick={() => onTeacherClick(t)} className={`text-xs flex justify-between items-center border-b border-slate-700/50 pb-2 pt-2 cursor-pointer hover:bg-slate-700/50 px-2 rounded transition-colors group ${isMatchKecamatan ? 'bg-indigo-900/20 border-l-2 border-l-indigo-400' : ''}`}>
-                                                      <div className="flex-1">
-                                                        <strong className="text-white group-hover:text-amber-300 text-sm">
-                                                          {t.nama || '-'} 
-                                                          {isASN && <span className="ml-1.5 bg-blue-900/50 text-blue-300 px-1 py-0.5 rounded text-[8px] border border-blue-500">🛡️ {t.statusPegawai}</span>}
-                                                        </strong> <br/>
-                                                        <span className="text-[10px] text-cyan-400">{t.sekolah} (Total: {t.totalJam} Jam)</span>
-                                                        
-                                                        <div className="mt-1 flex flex-wrap gap-1">
-                                                            {isMatchKecamatan ? (
-                                                              <span className="bg-emerald-600/20 border border-emerald-500 text-emerald-300 px-1.5 py-0.5 rounded text-[9px] uppercase font-bold">🌟 SATU KECAMATAN</span>
-                                                            ) : (
-                                                              <span className="bg-slate-800 border border-slate-600 text-slate-300 px-1.5 py-0.5 rounded text-[9px] uppercase">📍 Kec. {t.kecamatan || 'Belum Diisi'}</span>
-                                                            )}
-                                                            {isLintasJenjang && (
-                                                              <span className="bg-fuchsia-900/50 border border-fuchsia-500/50 text-fuchsia-300 px-1.5 py-0.5 rounded text-[9px] uppercase font-bold">🔄 LINTAS: {guruJenjang} ➡️ {targetJenjang}</span>
-                                                            )}
-                                                        </div>
+                                      
+                                      <div className="p-3 bg-slate-900/50">
+                                          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block mb-2">💡 Rekomendasi Guru (Surplus / Kurang Jam):</span>
+                                          {kandidatGuru.length > 0 ? (
+                                              <div className="space-y-2">
+                                                  {displayedKandidat.map(kg => {
+                                                      const kgJam = getJamUtama(kg);
+                                                      const isKgDefisit = kgJam > 0 && kgJam < 24;
+                                                      return (
+                                                      <div key={kg.id} className="flex justify-between items-center bg-slate-800 border border-slate-700 p-2 rounded">
+                                                          <div className="flex flex-col cursor-pointer w-full" onClick={() => onTeacherClick(kg)}>
+                                                              <span className="text-xs font-bold text-sky-300 hover:text-amber-400">{kg.nama}</span>
+                                                              <span className="text-[9px] text-slate-400">
+                                                                  Dari: {kg.sekolah} | Kec. {kg.kecamatan} 
+                                                                  {kg.kecamatan === dataSekolah.kecamatan && <span className="text-emerald-400 font-bold ml-1">(📍 1 Domisili)</span>}
+                                                                  <span className={isKgDefisit ? "text-rose-400 font-bold ml-1" : "text-slate-500 ml-1"}> | Jam Utama: {kgJam} JP</span>
+                                                              </span>
+                                                              
+                                                              {kg.is_rekomendasi_internal && (
+                                                                  <span className="text-[9px] text-amber-400 font-black uppercase mt-1.5 block leading-tight border-t border-amber-900/50 pt-1.5">
+                                                                      🌟 Prioritas Mutasi <br/>
+                                                                      {kg.alasanRekomendasi && <span className="text-[8px] text-amber-200 font-normal italic normal-case">"{kg.alasanRekomendasi}"</span>}
+                                                                  </span>
+                                                              )}
+                                                          </div>
                                                       </div>
-
-                                                      <div className="ml-2 pl-2 border-l border-slate-700/50 flex flex-col justify-center">
-                                                          <button 
-                                                            onClick={(e) => handleAddSimulation(e, t, mapel)} 
-                                                            disabled={sisaKurang <= 0}
-                                                            className={`text-[9px] px-3 py-1.5 rounded font-black tracking-wider transition-all shadow-md ${sisaKurang <= 0 ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-emerald-600 text-white hover:bg-emerald-500 hover:scale-105'}`}
-                                                          >
-                                                              + TARIK
-                                                          </button>
-                                                      </div>
-                                                  </li>
-                                                  );
-                                              })}
-                                          </ul>
-                                      ) : ( <p className="text-xs text-slate-500 italic">Belum ada kandidat tersisa untuk ditarik.</p> )}
-                                  </div>
-                              </div>
-                          );
-                      })
-                  )}
-              </div>
-
-              {/* === KOLOM 2: DAFTAR KELEBIHAN === */}
-              <div className="bg-slate-900/50 p-5 rounded-xl border border-emerald-900/30">
-                  <h3 className="text-emerald-400 font-bold text-lg mb-4 flex items-center gap-2 border-b border-emerald-900/50 pb-2">🔺 Daftar Kelebihan Guru</h3>
-                  {Object.entries(schoolData.mapel).filter((entry) => entry[1].kelebihan > 0).length === 0 ? (
-                      <p className="text-slate-500 italic text-sm">Tidak ada kelebihan guru di sekolah ini.</p>
-                  ) : (
-                      Object.entries(schoolData.mapel).filter((entry) => entry[1].kelebihan > 0).map(([mapel, data]) => {
-                          
-                          const simulatedAway = simulations.filter(s => s.teacher.sekolah === analisisSekolah && s.teacher.bidangStudi === mapel);
-                          const sisaLebih = data.kelebihan - simulatedAway.length;
-
-                          // Urutkan guru internal berdasarkan status ASN juga
-                          const internalTeachers = allTeachers.filter(t => t.sekolah === analisisSekolah && t.bidangStudi === mapel)
-                                                              .filter(t => !simulatedTeacherIds.includes(t.id))
-                                                              .sort((a,b) => getStatusWeight(a.statusPegawai) - getStatusWeight(b.statusPegawai));
-
-                          return (
-                              <div key={mapel} className="mb-4 bg-slate-800 rounded-lg p-4 border-l-4 border-emerald-500 shadow-md">
-                                  <div className="flex justify-between items-center mb-2 border-b border-slate-700 pb-2">
-                                      <span className="font-bold text-slate-200">{mapel}</span>
-                                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${sisaLebih <= 0 ? 'bg-slate-700 text-slate-400' : 'bg-emerald-900/50 text-emerald-300'}`}>
-                                          Lebih {data.kelebihan} {simulatedAway.length > 0 && ` ➡️ SISA: ${sisaLebih}`}
-                                      </span>
-                                  </div>
-
-                                  {simulatedAway.length > 0 && (
-                                      <div className="bg-rose-900/30 p-3 rounded mb-3 border border-rose-500/30">
-                                          <p className="text-[10px] text-rose-300 font-bold uppercase mb-2">🚀 Sedang Ditarik ke Sekolah Lain:</p>
-                                          <ul className="space-y-1">
-                                              {simulatedAway.map(sim => (
-                                                  <li key={sim.teacher.id} className="text-[10px] text-slate-300 flex justify-between border-b border-rose-900/50 pb-1">
-                                                      <span>{sim.teacher.nama}</span>
-                                                      <span className="font-bold text-rose-200">➡️ {sim.targetSekolah}</span>
-                                                  </li>
-                                              ))}
-                                          </ul>
+                                                  )})}
+                                                  
+                                                  {kandidatGuru.length > 3 && (
+                                                      <button 
+                                                          onClick={() => setExpandedKandidatGuru(p => ({...p, [namaMapel]: !isExpandedGuru}))}
+                                                          className="w-full mt-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sky-400 text-[10px] font-bold py-1.5 rounded transition-colors"
+                                                      >
+                                                          {isExpandedGuru ? 'Tutup Daftar Kandidat ⬆️' : `+ Lihat ${kandidatGuru.length - 3} Kandidat Lainnya ⬇️`}
+                                                      </button>
+                                                  )}
+                                              </div>
+                                          ) : (
+                                              <div className="text-[10px] text-slate-500 italic">Belum ada guru surplus/kurang jam di mapel ini dari sekolah lain.</div>
+                                          )}
                                       </div>
-                                  )}
+                                  </li>
+                              )})}
+                          </ul>
+                      )}
+                  </div>
 
-                                  <div className="bg-slate-900 p-3 rounded mt-2">
-                                      <p className="text-[10px] text-amber-400 font-bold uppercase mb-2">Daftar Pendidik Tersedia (Internal):</p>
-                                      {internalTeachers.length > 0 ? (
-                                          <ul className="space-y-2">
-                                              {internalTeachers.map(t => {
-                                                  // Peringatan jika guru ini akan segera pensiun
-                                                  const isRetiringSoon = getMonthsToRetire(t.bulanTahunPensiun) <= 12;
+                  {/* BLOK SURPLUS */}
+                  <div className="bg-emerald-950/20 border border-emerald-900/50 p-5 rounded-xl shadow-inner">
+                      <h4 className="text-sm font-black text-emerald-400 uppercase tracking-widest border-b border-emerald-900/50 pb-2 mb-4">📈 Kelebihan Guru & Defisit Jam (&lt; 24)</h4>
+                      {combinedSurplusArray.length === 0 ? ( <div className="text-slate-500 italic text-sm text-center py-4">Tidak ada kelebihan guru maupun guru kurang jam.</div> ) : (
+                          <div className="space-y-5">
+                              {combinedSurplusArray.map(namaMapelUpper => {
+                                  
+                                  const sheetEntry = Object.entries(dataSekolah.mapel).find(([key]) => key.toUpperCase() === namaMapelUpper);
+                                  const sheetVal = sheetEntry ? sheetEntry[1].kelebihan : 0;
+                                  const displayNamaMapel = sheetEntry ? sheetEntry[0] : namaMapelUpper;
 
-                                                  return (
-                                                  <li key={t.id} onClick={() => onTeacherClick(t)} className="text-xs text-slate-300 flex justify-between items-center border-b border-slate-700/50 pb-2 pt-1 cursor-pointer hover:bg-slate-700/50 px-2 rounded transition-colors group">
-                                                      <span>
-                                                        <strong className={`text-sm ${isRetiringSoon ? 'text-rose-300' : 'text-white'} group-hover:text-amber-300`}>
-                                                            {t.nama || '-'}
-                                                        </strong> <br/>
-                                                        <span className="text-[10px] text-slate-400">Status: {t.statusPegawai}</span>
-                                                        <span className="ml-2 bg-slate-800 border border-slate-600 text-slate-300 px-1.5 py-0.5 rounded text-[9px] uppercase shadow-sm">📍 Kec. {t.kecamatan || 'Belum Diisi'}</span>
-                                                        
-                                                        {isRetiringSoon && (
-                                                            <div className="mt-1">
-                                                                <span className="bg-rose-900/80 text-rose-200 px-1.5 py-0.5 rounded text-[8px] font-bold border border-rose-500 shadow-sm">⚠️ MASA PENSIUN ≤ 1 TAHUN</span>
-                                                            </div>
-                                                        )}
-                                                      </span>
-                                                      <span className="bg-slate-700 px-2 py-1 rounded text-[10px] font-bold group-hover:bg-slate-600 text-slate-200">Total: {t.totalJam} Jam</span>
-                                                  </li>
-                                                  );
-                                              })}
-                                          </ul>
-                                      ) : ( <p className="text-[10px] text-rose-400 italic">Semua data guru sudah terdistribusi atau belum diinputkan.</p> )}
-                                  </div>
-                              </div>
-                          );
-                      })
-                  )}
+                                  const surplusTeachers = teachersInSchool.filter(t => {
+                                      const m = (t.bidangStudi || t.tugasMengajar || '').toUpperCase();
+                                      if (m !== namaMapelUpper) return false;
+                                      
+                                      // 🌟 JALUR VIP SURPLUS
+                                      if (t.is_rekomendasi_internal) return true;
+                                      
+                                      if (sheetVal > 0) return true; 
+                                      const jam = getJamUtama(t);
+                                      return jam > 0 && jam < 24;
+                                  });
+
+                                  return (
+                                      <div key={namaMapelUpper} className="bg-emerald-900/10 border border-emerald-800/30 rounded-lg overflow-hidden">
+                                          <div className="flex justify-between items-center p-3 bg-emerald-950/40 border-b border-emerald-900/50">
+                                              <strong className="text-emerald-200">{displayNamaMapel}</strong>
+                                              <div className="flex gap-2">
+                                                  {sheetVal > 0 && <span className="bg-emerald-600 text-white text-[10px] font-black px-2 py-1 rounded">Lebih {sheetVal}</span>}
+                                                  {sheetVal === 0 && <span className="bg-rose-900/80 border border-rose-500 text-rose-300 text-[10px] font-black px-2 py-1 rounded">Ada Defisit JP</span>}
+                                              </div>
+                                          </div>
+                                          
+                                          {surplusTeachers.length > 0 ? (
+                                              <div className="p-3 space-y-4 bg-slate-900/30">
+                                                  {surplusTeachers.map(t => {
+                                                      const jamThisT = getJamUtama(t);
+                                                      const isThisDefisit = jamThisT > 0 && jamThisT < 24;
+
+                                                      const kandidatSekolah = spreadsheetData.filter(d => {
+                                                          if (d.sekolah === t.sekolah) return false;
+                                                          const entry = Object.entries(d.mapel).find(([key]) => key.toUpperCase() === namaMapelUpper);
+                                                          return entry && entry[1].kurang > 0;
+                                                      }).sort((a, b) => {
+                                                          const aKecMatch = a.kecamatan === t.kecamatan ? 1 : 0;
+                                                          const bKecMatch = b.kecamatan === t.kecamatan ? 1 : 0;
+                                                          return bKecMatch - aKecMatch;
+                                                      });
+
+                                                      const isExpandedSekolah = expandedKandidatSekolah[t.id];
+                                                      const displayedSekolah = isExpandedSekolah ? kandidatSekolah : kandidatSekolah.slice(0, 3);
+
+                                                      return (
+                                                      <div key={t.id} className={`p-3 rounded-lg ${t.is_rekomendasi_internal ? 'bg-amber-900/20 border border-amber-600/50' : 'bg-slate-800 border border-slate-700'}`}>
+                                                          <div className="flex justify-between items-start mb-2">
+                                                              <div className="flex flex-col cursor-pointer" onClick={() => onTeacherClick(t)}>
+                                                                  <span className="text-sm font-bold text-white hover:text-amber-400">{t.nama}</span>
+                                                                  <span className="text-[10px] text-slate-400">
+                                                                      Kec. Domisili: {t.kecamatan || '-'} | <span className={isThisDefisit ? "text-rose-400 font-bold" : "text-emerald-400 font-bold"}>Jam Utama: {jamThisT} JP</span>
+                                                                  </span>
+                                                                  
+                                                                  {t.is_rekomendasi_internal && (
+                                                                      <span className="text-[9px] text-amber-400 font-black uppercase mt-1.5 block leading-tight">
+                                                                          🌟 Prioritas Mutasi <br/>
+                                                                          {t.alasanRekomendasi && <span className="text-[8px] text-amber-200 font-normal italic normal-case">"{t.alasanRekomendasi}"</span>}
+                                                                      </span>
+                                                                  )}
+                                                              </div>
+                                                              <button onClick={() => setSimulasiModal({isOpen: true, teacher: t})} className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded text-[10px] font-black shadow-lg whitespace-nowrap">🚀 Ajukan Pindah</button>
+                                                          </div>
+                                                          
+                                                          <div className="mt-2 pt-2 border-t border-slate-700">
+                                                              <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest block mb-2">🎯 Rekomendasi Tujuan Mutasi:</span>
+                                                              {kandidatSekolah.length > 0 ? (
+                                                                  <div className="space-y-1.5">
+                                                                      {displayedSekolah.map(ks => {
+                                                                          const ksKurangVal = Object.entries(ks.mapel).find(([key]) => key.toUpperCase() === namaMapelUpper)?.[1].kurang || 0;
+                                                                          return (
+                                                                          <div key={ks.sekolah} className="flex justify-between items-center text-[10px] bg-slate-900 px-2 py-1.5 rounded border border-slate-700/50">
+                                                                              <span className="text-slate-300">{ks.sekolah} {ks.kecamatan === t.kecamatan && <span className="text-emerald-400 font-bold ml-1">(📍 1 Domisili)</span>}</span>
+                                                                              <span className="text-rose-400 font-bold">Butuh {ksKurangVal}</span>
+                                                                          </div>
+                                                                      )})}
+                                                                      
+                                                                      {kandidatSekolah.length > 3 && (
+                                                                          <button 
+                                                                              onClick={() => setExpandedKandidatSekolah(p => ({...p, [t.id]: !isExpandedSekolah}))}
+                                                                              className="w-full mt-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-sky-400 text-[9px] font-bold py-1 rounded transition-colors"
+                                                                          >
+                                                                              {isExpandedSekolah ? 'Tutup Daftar Instansi ⬆️' : `+ Lihat ${kandidatSekolah.length - 3} Instansi Lainnya ⬇️`}
+                                                                          </button>
+                                                                      )}
+                                                                  </div>
+                                                              ) : (
+                                                                  <div className="text-[10px] text-slate-500 italic">Belum ada sekolah yang kekurangan mapel ini.</div>
+                                                              )}
+                                                          </div>
+                                                      </div>
+                                                  )})}
+                                              </div>
+                                          ) : ( <div className="p-3 text-[10px] text-slate-500 italic">Data nama riil guru untuk mapel ini belum diinput di Buku Induk.</div> )}
+                                      </div>
+                                  );
+                              })}
+                          </div>
+                      )}
+                  </div>
               </div>
-          </div>
+          )}
+
+          {/* FALLBACK TAMPILAN GURU JIKA TIDAK ADA SPREADSHEET */}
+          {!dataSekolah && teachersInSchool.length > 0 && (
+              <div className="bg-slate-950 border border-slate-700 p-5 rounded-xl">
+                  <h4 className="text-sm font-black text-slate-300 uppercase tracking-widest border-b border-slate-700 pb-2 mb-4">👥 Daftar Pendidik Riil di {analisisSekolah}</h4>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                      {teachersInSchool.map(t => (
+                          <div key={t.id} className={`flex justify-between items-center p-3 rounded-lg ${t.is_rekomendasi_internal ? 'bg-amber-900/30 border border-amber-600/50' : 'bg-slate-900 border border-slate-700'}`}>
+                              <div className="flex flex-col cursor-pointer" onClick={() => onTeacherClick(t)}>
+                                  <strong className="text-sm text-white hover:text-amber-400">{t.nama}</strong>
+                                  <span className="text-xs text-slate-400">{t.tugasMengajar || t.bidangStudi}</span>
+                                  {t.is_rekomendasi_internal && (
+                                      <span className="text-[9px] text-amber-400 font-black uppercase mt-1">
+                                          🌟 Prioritas Mutasi {t.alasanRekomendasi && <span className="font-normal italic normal-case text-amber-200">"{t.alasanRekomendasi}"</span>}
+                                      </span>
+                                  )}
+                              </div>
+                              <button onClick={() => setSimulasiModal({isOpen: true, teacher: t})} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded text-xs font-black shadow-lg">🚀 Ajukan Pindah</button>
+                          </div>
+                      ))}
+                  </div>
+              </div>
+          )}
+        </div>
+      )}
+
+      {/* 🌟 MODAL SIMULASI PENGAJUAN MUTASI */}
+      {simulasiModal.isOpen && simulasiModal.teacher && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+           <div className="bg-slate-900 border border-indigo-500/50 rounded-2xl w-full max-w-lg shadow-[0_0_40px_rgba(79,70,229,0.3)] flex flex-col max-h-[90vh]">
+              <div className="p-5 border-b bg-indigo-950/40 border-indigo-800/50">
+                 <h3 className="text-xl font-black text-white tracking-wider">🚀 Form Pengajuan Mutasi</h3>
+              </div>
+              <div className="p-5 space-y-4 overflow-y-auto custom-scrollbar">
+                 <div className="bg-slate-950 border border-slate-700 p-4 rounded-lg">
+                     <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block mb-1">Identitas Pendidik (Surplus / Kurang Jam):</span>
+                     <strong className="text-lg text-white block">{simulasiModal.teacher.nama}</strong>
+                     <span className="text-xs text-amber-300 font-bold bg-slate-800 px-2 py-1 rounded inline-block mt-2">{simulasiModal.teacher.tugasMengajar || simulasiModal.teacher.bidangStudi}</span>
+                 </div>
+                 
+                 <div className="bg-indigo-950/20 border border-indigo-900/50 p-4 rounded-lg">
+                    <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest block mb-3">Pilih Instansi Tujuan:</span>
+                    <select className="w-full bg-slate-900 border border-indigo-500/50 text-white rounded-lg px-4 py-3 outline-none focus:border-indigo-400 font-bold shadow-inner" value={targetSekolah} onChange={(e) => setTargetSekolah(e.target.value)}>
+                       <option value="">-- Cari Sekolah Tujuan --</option>
+                       {listSekolah.map(s => {
+                           if (s === simulasiModal.teacher?.sekolah) return null;
+                           const d = spreadsheetData.find(x => x.sekolah === s);
+                           const mapelGuru = simulasiModal.teacher?.tugasMengajar || simulasiModal.teacher?.bidangStudi || '';
+                           const entry = d ? Object.entries(d.mapel).find(([key]) => key.toUpperCase() === mapelGuru.toUpperCase()) : null;
+                           const kurangTarget = entry ? entry[1].kurang : 0;
+                           return <option key={s} value={s}>{s} {kurangTarget > 0 ? `(🔥 Butuh ${kurangTarget} Guru)` : ''}</option>;
+                       })}
+                    </select>
+                 </div>
+              </div>
+              <div className="p-4 border-t border-slate-700 bg-slate-800/50 flex justify-end gap-3">
+                 <button onClick={() => {setSimulasiModal({isOpen: false, teacher: null}); setTargetSekolah('');}} className="px-5 py-2.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm font-bold transition-colors">Batal</button>
+                 <button onClick={handleAjukanMutasi} disabled={!targetSekolah} className={`px-6 py-2.5 rounded-lg text-sm font-black transition-colors shadow-lg ${!targetSekolah ? 'bg-indigo-900 text-indigo-500 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>📤 Kirim ke Cabdin</button>
+              </div>
+           </div>
+        </div>
       )}
     </div>
   );
